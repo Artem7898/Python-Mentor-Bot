@@ -1,36 +1,28 @@
+# Python Mentor Bot
 
----
+Python Mentor Bot te ayuda a aprender Python en Telegram. Abre **DASHBOARD** con `/start` para elegir una lección, ver ejemplos, enviar una pregunta, consultar tu progreso o cambiar el idioma de la interfaz.
 
-### 🇪🇸 **README-es.md** (Español)
-```markdown
-# 🤖 Python Mentor Bot
+[English](README.md) · [Русский](README-ru.md) · [Documentación](docs/README.md)
 
-Bot de Telegram moderno para aprender Python 3.14+ con lecciones interactivas, ejecución segura de código y seguimiento de progreso.
+## Inicio rápido
 
-[![Python](https://img.shields.io/badge/Python-3.14+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![aiogram](https://img.shields.io/badge/aiogram-3.0+-26A1DE?style=for-the-badge)](https://docs.aiogram.dev/)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+Necesitas Python 3.14+, SQLite 3.35+ y un token para un bot de pruebas. [@BotFather](https://t.me/BotFather)
 
-## ✨ Características
+Desde la raíz del repositorio, crea un entorno e instala las dependencias.
 
-| Característica | Descripción |
-|----------------|-------------|
-| **🎓 Lecciones Interactivas** | 12 temas desde lo básico de Python hasta microservicios |
-| **💻 Ejecución Segura de Código** | Sandbox integrado para ejecutar código Python |
-| **📊 Seguimiento de Progreso** | Base de datos SQLite almacena progreso y calificaciones |
-| **🎯 Tests y Cuestionarios** | Verificaciones de conocimiento tras cada tema |
-| **⚡ Rendimiento Asíncrono** | aiogram 3.0+ para operaciones rápidas y no bloqueantes |
-| **🔒 Seguridad Moderna** | Type hints, validación Pydantic, sanitización de entrada |
-| **🎨 Formato Enriquecido** | Conversión de Markdown a HTML para mensajes hermosos |
-
-## 📋 Requisitos
-
-- **Python 3.14** o más reciente
-- **Token de Bot Telegram** (obtenlo de [@BotFather](https://t.me/BotFather))
-
-## 🚀 Inicio Rápido
-
-### 1. Clonar el Repositorio
 ```bash
-git clone https://github.com/Artem7898/python-mentor-bot.git
-cd python-mentor-bot
+python3.14 -m venv python-mentor-bot/.venv
+python-mentor-bot/.venv/bin/python -m pip install -r python-mentor-bot/requirements.txt
+```
+
+Configura `BOT_TOKEN` en el entorno del proceso o en un archivo privado `python-mentor-bot/.env`. Arranca el bot desde el directorio de la aplicación.
+
+```bash
+(cd python-mentor-bot && .venv/bin/python main.py)
+```
+
+Abre el bot en Telegram y envía `/start`. El botón de idioma y el comando `/language` permiten elegir entre inglés, ruso y español. El bot guarda el idioma y tu progreso en SQLite.
+
+El temario incluye fundamentos de Python y capítulos independientes sobre Django, FastAPI, Django REST Framework y Pydantic. El comando `/run (2 + 3) ** 2` evalúa una expresión aritmética con límites de complejidad.
+
+La guía completa incluye los comandos para Windows, la configuración, la arquitectura, el temario y las pruebas. [Documentación en español](docs/es/README.md)

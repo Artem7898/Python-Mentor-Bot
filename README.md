@@ -1,31 +1,28 @@
-# 🤖 Python Mentor Bot
+# Python Mentor Bot
 
-Современный Telegram-бот для обучения Python 3.14+ с интерактивными уроками, безопасным выполнением кода и отслеживанием прогресса.
+Python Mentor Bot teaches Python inside Telegram. Open **DASHBOARD** with `/start` to browse lessons, view code examples, ask a question, check your progress, or change the interface language.
 
-[![Python](https://img.shields.io/badge/Python-3.14+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![aiogram](https://img.shields.io/badge/aiogram-3.0+-26A1DE?style=for-the-badge)](https://docs.aiogram.dev/)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+[Русский](README-ru.md) · [Español](README-es.md) · [Documentation](docs/README.md)
 
-## ✨ Особенности
+## Quick start
 
-| Особенность | Описание |
-|-------------|----------|
-| **🎓 Интерактивные уроки** | 12 тем от основ Python до микросервисов |
-| **💻 Безопасное выполнение кода** | Встроенная песочница для запуска Python-кода |
-| **📊 Отслеживание прогресса** | База данных SQLite хранит прогресс и результаты тестов |
-| **🎯 Тесты и квизы** | Проверка знаний после каждой темы |
-| **⚡ Асинхронная работа** | aiogram 3.0+ для быстрых и неблокирующих операций |
-| **🔒 Современная безопасность** | Type hints, валидация Pydantic, защита от вредоносного кода |
-| **🎨 Красивое форматирование** | Конвертация Markdown в HTML для приятного вида сообщений |
+You need Python 3.14+, SQLite 3.35+, and a test bot token. [@BotFather](https://t.me/BotFather)
 
-## 📋 Требования
+From the repository root, create an environment and install the bot dependencies.
 
-- **Python 3.14** или новее
-- **Токен Telegram Bot** (получите у [@BotFather](https://t.me/BotFather))
-
-## 🚀 Быстрый старт
-
-### 1. Клонирование репозитория
 ```bash
-git clone https://github.com/Artem7898/python-mentor-bot.git
-cd python-mentor-bot
+python3.14 -m venv python-mentor-bot/.venv
+python-mentor-bot/.venv/bin/python -m pip install -r python-mentor-bot/requirements.txt
+```
+
+Set `BOT_TOKEN` in the process environment or a private `python-mentor-bot/.env` file. Start the bot from its application directory.
+
+```bash
+(cd python-mentor-bot && .venv/bin/python main.py)
+```
+
+Open the bot in Telegram and send `/start`. The language button and `/language` offer English, Russian, and Spanish. The bot saves your selection and progress in SQLite.
+
+The curriculum covers Python fundamentals and separate Django, FastAPI, Django REST Framework, and Pydantic chapters. `/run (2 + 3) ** 2` evaluates a bounded arithmetic expression.
+
+See the full guide for Windows commands, configuration, architecture, curriculum, and tests. [English documentation](docs/en/README.md)

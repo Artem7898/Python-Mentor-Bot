@@ -1,24 +1,36 @@
-# tests/test_markdown.py
 import pytest
+
 from main import markdown_to_html, validate_markdown
 
 
-def test_markdown_to_html():
-    """Тест конвертации Markdown в HTML."""
-    test_cases = [
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
         ("**жирный**", "<b>жирный</b>"),
         ("*курсив*", "<i>курсив</i>"),
         ("`код`", "<code>код</code>"),
         ("```python\nprint()\n```", '<pre><code class="language-python">print()</code></pre>'),
-    ]
+        ("**жирный и *курсив***", "<b>жирный и <i>курсив</i></b>"),
+        (r"\*шаблон\* <i>a & b</i>", "*шаблон* &lt;i&gt;a &amp; b&lt;/i&gt;"),
+        ("`<b> **не жирный**`", "<code>&lt;b&gt; **не жирный**</code>"),
+        ('```x" onclick="evil\n<>&\n```', "<pre>x&quot; onclick=&quot;evil\n&lt;&gt;&amp;</pre>"),
+        ("**неправильно <script>", "**неправильно &lt;script&gt;"),
+        ("**жирный** и `незакрытый <b>", "<b>жирный</b> и `незакрытый &lt;b&gt;"),
+    ],
+)
+def test_markdown_to_html(source: str, expected: str) -> None:
+    """Render supported formatting and escape plain and code text."""
+    assert markdown_to_html(source) == expected
 
-    for input_text, expected in test_cases:
-        result = markdown_to_html(input_text)
-        assert result == expected, f"Failed for: {input_text}"
+
+@pytest.mark.parametrize("source", ["**правильно**", "`**a`", "```python\n*\n```", r"\*шаблон"])
+def test_validate_markdown_accepts_paired_delimiters(source: str) -> None:
+    assert validate_markdown(source) == (True, "")
 
 
-def test_validate_markdown():
-    """Тест валидации Markdown."""
-    assert validate_markdown("**правильно**")[0] == True
-    assert validate_markdown("**неправильно")[0] == False
-    assert "Непарные **" in validate_markdown("**неправильно")[1]
+@pytest.mark.parametrize(
+    ("source", "marker"),
+    [("**неправильно", "**"), ("*неправильно", "*"), ("`код", "`"), ("```python\nx", "```")],
+)
+def test_validate_markdown_rejects_unpaired_delimiter(source: str, marker: str) -> None:
+    assert validate_markdown(source) == (False, f"Непарные {marker}")

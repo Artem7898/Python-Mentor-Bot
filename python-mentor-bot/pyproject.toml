@@ -1,0 +1,18 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "I", "B", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# These modules contain Russian text sent to learners.
+"bot/handlers.py" = ["RUF001"]
+"bot/i18n.py" = ["RUF001"]
+"bot/lessons.py" = ["RUF001"]
+"main.py" = ["RUF001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
