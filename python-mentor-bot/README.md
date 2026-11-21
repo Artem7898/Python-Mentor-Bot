@@ -1,53 +1,11 @@
-# Python Mentor Bot - Образовательный Telegram бот
+# Python Mentor Bot application
 
-Современный Telegram-бот для обучения Python 3.14+ с использованием актуальных технологий и лучших практик.
+This directory contains the Telegram bot, its SQLite initializer, dependency manifests, and tests. Run `main.py` from this directory so local dotenv configuration and relative database paths resolve here.
 
-## 🚀 Особенности
+Choose a guide for setup, architecture, curriculum, data migration, and testing.
 
-- **Актуальность**: Все уроки соответствуют Python 3.14 (декабрь 2025)
-- **Современные технологии**: 
-  - Асинхронность с aiogram 3.0+
-  - Безопасное выполнение кода
-  - Многопоточность Python 3.14
-  - T-строки для безопасного форматирования
-- **Интерактивность**:
-  - Интерактивные уроки с примерами кода
-  - Тесты для проверки знаний
-  - Выполнение кода в песочнице
-  - Отслеживание прогресса
+- [English](../docs/en/README.md)
+- [Русский](../docs/ru/README.md)
+- [Español](../docs/es/README.md)
 
-## 📋 Требования
-
-- Python 3.14 или новее
-- Telegram Bot Token (от @BotFather)
-
-## ⚙️ Установка
-
-1. **Клонирование репозитория**:
-   ```bash
- # Python Mentor Bot 🤖
-
-Telegram бот для менторства по Python с использованием базы данных SQLite и Docker.
-
-## 🚀 Быстрый старт
-
-### 1. Клонирование репозитория
-```bash
-git clone https://github.com/Artem7898/python-mentor-bot.git
-cd python-mentor-bot
-
-
-**`docker-entrypoint.sh`**:
-```bash
-#!/bin/bash
-set -e
-
-# Инициализация базы данных при первом запуске
-if [ ! -f "/app/data/bot_data.db" ]; then
-    echo "Initializing database..."
-    python create_db.py
-    echo "Database initialized!"
-fi
-
-# Запуск основного приложения
-exec "$@"
+[Repository overview](../README.md)
