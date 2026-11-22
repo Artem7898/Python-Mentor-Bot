@@ -4,6 +4,10 @@ Python Mentor Bot teaches Python inside Telegram. Open **DASHBOARD** with `/star
 
 [Русский](README-ru.md) · [Español](README-es.md) · [Documentation](docs/README.md)
 
+## Video demo
+
+[Watch Python Mentor Bot in action on YouTube](https://youtu.be/Bespied313c?si=DRmlSorw1F7Is1yg)
+
 ## Quick start
 
 You need Python 3.14+, SQLite 3.35+, and a test bot token. [@BotFather](https://t.me/BotFather)
