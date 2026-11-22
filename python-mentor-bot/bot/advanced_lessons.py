@@ -1,131 +1,12 @@
 """Localized Django, FastAPI, DRF and Pydantic v2 lessons."""
 
-from dataclasses import dataclass
 from typing import Final
 
-from bot.lesson_models import Lesson, LessonPage, LessonTopic
-
-type Text = tuple[str, str, str]
-
-_LANGUAGES = ("ru", "en", "es")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class _Page:
-    title: Text
-    explanation: Text
-    example_code: str
-    install_code: str | None = None
-    steps: tuple[Text, ...] = ()
-
-    def localize(self, index: int) -> LessonPage:
-        return LessonPage(
-            title=self.title[index],
-            explanation=self.explanation[index],
-            install_code=self.install_code,
-            example_code=self.example_code,
-            steps=tuple(step[index] for step in self.steps),
-        )
-
-
-def _localize(title: Text, *pages: _Page) -> dict[str, Lesson]:
-    return {
-        language: Lesson(title[index], tuple(page.localize(index) for page in pages))
-        for index, language in enumerate(_LANGUAGES)
-    }
-
+from bot.lesson_models import Lesson, LessonTopic
+from bot.lesson_models import LocalizedPage as _Page
+from bot.lesson_models import localize_lesson as _localize
 
 ADVANCED_LESSONS: Final[dict[LessonTopic, dict[str, Lesson]]] = {
-    LessonTopic.DJANGO: _localize(
-        ("🎸 Django", "🎸 Django", "🎸 Django"),
-        _Page(
-            title=("Проект и маршруты", "Projects and routes", "Proyectos y rutas"),
-            explanation=(
-                "Проект Django хранит настройки и корневой URLconf. Приложение объединяет "
-                "код предметной области. Функция представления получает HttpRequest "
-                "и формирует JsonResponse для данных приложения.",
-                "A Django project contains settings and the root URLconf. An application "
-                "groups domain code. A view receives an HttpRequest and returns a response, "
-                "such as JsonResponse for structured data.",
-                "Un proyecto Django reúne la configuración y el URLconf raíz. Una aplicación "
-                "agrupa el código de un dominio. Una vista recibe un HttpRequest y devuelve "
-                "una respuesta, como JsonResponse para datos estructurados.",
-            ),
-            install_code="""python -m pip install "Django~=5.2.8"
-python -m django startproject config .
-python manage.py migrate
-python manage.py runserver""",
-            example_code="""# config/urls.py
-from django.http import HttpRequest, JsonResponse
-from django.urls import path
-
-
-def health(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({"status": "ok"})
-
-
-urlpatterns = [
-    path("health/", health, name="health"),
-]""",
-            steps=(
-                (
-                    "После startproject добавьте маршрут в config/urls.py.",
-                    "After startproject, add the route to config/urls.py.",
-                    "Después de startproject, añade la ruta a config/urls.py.",
-                ),
-                (
-                    "Запустите сервер и откройте http://127.0.0.1:8000/health/.",
-                    "Start the server and open http://127.0.0.1:8000/health/.",
-                    "Inicia el servidor y abre http://127.0.0.1:8000/health/.",
-                ),
-            ),
-        ),
-        _Page(
-            title=("Модели и миграции", "Models and migrations", "Modelos y migraciones"),
-            explanation=(
-                "Модель описывает поля и ограничения данных. makemigrations генерирует "
-                "миграцию. Команда migrate применяет её к SQLite. ORM фильтрует и сортирует "
-                "строки без склеивания SQL из пользовательского ввода.",
-                "A model describes data fields and constraints. makemigrations creates a "
-                "migration, and migrate applies it to SQLite. The ORM filters and sorts "
-                "rows using data parameters.",
-                "Un modelo describe campos y restricciones. makemigrations crea una "
-                "migración y migrate la aplica a SQLite. El ORM filtra y ordena filas "
-                "usando parámetros de datos.",
-            ),
-            install_code="""python manage.py startapp catalog
-# Set INSTALLED_APPS and catalog/models.py before running these commands.
-python manage.py makemigrations catalog
-python manage.py migrate
-python manage.py shell""",
-            example_code="""# catalog/models.py
-from django.db import models
-
-
-class Product(models.Model):
-    name = models.CharField(max_length=120)
-    available = models.BooleanField(default=True)
-
-
-# python manage.py shell
-from catalog.models import Product
-
-Product.objects.create(name="Notebook")
-print(list(Product.objects.filter(available=True).values_list("name", flat=True)))""",
-            steps=(
-                (
-                    'Добавьте "catalog" в INSTALLED_APPS в config/settings.py.',
-                    'Add "catalog" to INSTALLED_APPS in config/settings.py.',
-                    'Añade "catalog" a INSTALLED_APPS en config/settings.py.',
-                ),
-                (
-                    "Поместите определение в models.py, затем выполните миграции.",
-                    "Put the class in models.py, then apply the migrations.",
-                    "Pon la clase en models.py y ejecuta las migraciones.",
-                ),
-            ),
-        ),
-    ),
     LessonTopic.FASTAPI: _localize(
         ("⚡ FastAPI", "⚡ FastAPI", "⚡ FastAPI"),
         _Page(
@@ -143,7 +24,7 @@ print(list(Product.objects.filter(available=True).values_list("name", flat=True)
                 "FastAPI usa las anotaciones para validar parámetros de ruta y consulta. "
                 "Los valores inválidos devuelven HTTP 422. OpenAPI describe ambos formatos.",
             ),
-            install_code="""python -m pip install "fastapi[standard]"
+            install_code="""python -m pip install "fastapi[standard]>=0.165,<1"
 fastapi dev api.py""",
             example_code="""# api.py
 from typing import Annotated
@@ -181,7 +62,7 @@ async def read_item(
                 "Un modelo de entrada valida JSON. response_model documenta y limita "
                 "los campos de salida. TestClient llama directamente a la aplicación ASGI.",
             ),
-            install_code="""python -m pip install pytest httpx
+            install_code="""python -m pip install pytest httpx2
 python -m pytest -q test_api.py""",
             example_code="""# api.py
 from typing import Annotated
@@ -239,7 +120,7 @@ def test_create_item() -> None:
                 "devuelve HTTP 400 con datos inválidos. validated_data contiene los campos "
                 "validados. Usa un proyecto nuevo o el del tema de Django.",
             ),
-            install_code="""python -m pip install "djangorestframework>=3.16.1,<4"
+            install_code="""python -m pip install "djangorestframework>=3.18.3,<4"
 python manage.py runserver""",
             example_code="""# config/urls.py
 from django.urls import path

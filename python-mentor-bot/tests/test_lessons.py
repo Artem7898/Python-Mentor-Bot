@@ -21,7 +21,7 @@ def test_framework_page_retains_platform_specific_installation() -> None:
     assert page.linux_install and "source venv/bin/activate" in page.linux_install
 
 
-@pytest.mark.parametrize("topic", [topic for topic in LessonTopic if topic != LessonTopic.TEST])
+@pytest.mark.parametrize("topic", tuple(LessonTopic))
 def test_every_lesson_has_translated_pages(topic: LessonTopic) -> None:
     page_count = LessonManager.get_total_pages(topic)
     assert page_count > 0

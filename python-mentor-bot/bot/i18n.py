@@ -58,6 +58,9 @@ _COPY = {
     "next": ("Вперёд ➡️", "Next ➡️", "Siguiente ➡️"),
     "dashboard": ("🏠 Главное меню", "🏠 Dashboard", "🏠 Inicio"),
     "full_lesson": ("📖 Полный урок", "📖 Full lesson", "📖 Lección completa"),
+    "level_beginner": ("🌱 Новичок", "🌱 Beginner", "🌱 Principiante"),
+    "level_intermediate": ("🔧 Практик", "🔧 Intermediate", "🔧 Intermedio"),
+    "level_professional": ("🚀 Профессионал", "🚀 Professional", "🚀 Profesional"),
     "example": ("💻 Пример кода", "💻 Code example", "💻 Ejemplo de código"),
     "install_code": ("📦 Установка", "📦 Installation", "📦 Instalación"),
     "windows_install": (
@@ -97,6 +100,10 @@ _COPY = {
     "start_cmd": ("Открыть главное меню", "Open the dashboard", "Abrir el menú principal"),
     "help_cmd": ("Показать справку", "Show help", "Mostrar ayuda"),
     "language_cmd": ("Выбрать язык", "Choose a language", "Elegir idioma"),
+    "privacy_cmd": ("Мои данные", "My data", "Mis datos"),
+    "questions_cmd": ("Мои вопросы", "My questions", "Mis preguntas"),
+    "mentor_cmd": ("Очередь наставника", "Mentor queue", "Cola del mentor"),
+    "editor_cmd": ("Редактура курса", "Course editing", "Edición del curso"),
     "cancel_cmd": (
         "Отменить ожидание вопроса",
         "Cancel a pending question",
@@ -136,6 +143,8 @@ COMMANDS = (
     ("start", "start_cmd"),
     ("help", "help_cmd"),
     ("language", "language_cmd"),
+    ("privacy", "privacy_cmd"),
+    ("questions", "questions_cmd"),
     ("cancel", "cancel_cmd"),
     ("run", "run_cmd"),
 )
