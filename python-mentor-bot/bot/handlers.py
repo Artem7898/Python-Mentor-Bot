@@ -13,6 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
     ErrorEvent,
+    InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
     TelegramObject,
@@ -21,6 +22,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 
 from bot.access import ChatEvent, Roles, has_private_chat, telegram_user
+from bot.billing import register_billing_routes
 from bot.evaluator import EvaluationError, evaluate_expression
 from bot.formatting import escape_html, format_code
 from bot.i18n import COMMANDS, LANGUAGE_NAMES, Locale, resolve_locale, tr
@@ -28,6 +30,7 @@ from bot.lesson_models import LessonLevel
 from bot.lessons import LessonManager, LessonPage, LessonTopic
 from bot.personal import ask_question, register_personal_routes
 from bot.presentation import is_accessible, present, require_private
+from bot.pro_workflows import register_pro_replies, register_pro_routes
 from bot.storage import DatabaseManager, LearnerPreferences, StorageError
 from bot.study_copy import study_tr
 from bot.study_ui import (
@@ -87,6 +90,11 @@ class LocaleMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
+        if isinstance(event, Message) and (event.successful_payment or event.refunded_payment):
+            data["locale"] = resolve_locale(
+                event.from_user.language_code if event.from_user else None
+            )
+            return await handler(event, data)
         sender = telegram_user(event) if isinstance(event, (Message, CallbackQuery)) else None
         db: DatabaseManager = data["db"]
         chosen = (
@@ -275,7 +283,12 @@ async def _resume(db: DatabaseManager, user_id: int) -> str | None:
 async def _dashboard(event: ChatEvent, db: DatabaseManager, locale: Locale) -> None:
     sender = telegram_user(event)
     resume = await _resume(db, sender.id) if sender and has_private_chat(event) else None
-    await present(event, *dashboard_view(locale, resume))
+    text, markup = dashboard_view(locale, resume)
+    if has_private_chat(event):
+        markup.inline_keyboard.append(
+            [InlineKeyboardButton(text=tr(locale, "pro_cmd"), callback_data="pro:home")]
+        )
+    await present(event, text, markup)
 
 
 async def start(message: Message, state: FSMContext, db: DatabaseManager, locale: Locale) -> None:
@@ -614,7 +627,10 @@ def create_router() -> Router:
     router.message.register(cancel, Command("cancel"))
     router.message.register(run_expression, Command("run"))
     router.message.register(legacy_action, F.text.in_(set(_LEGACY_ACTIONS)))
+    register_billing_routes(router)
+    register_pro_routes(router)
     register_personal_routes(router)
+    register_pro_replies(router)
     router.message.register(search_lessons, Conversation.search)
     router.message.register(fallback_text, F.text)
     router.callback_query.register(show_languages, F.data == "languages")

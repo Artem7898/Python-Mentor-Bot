@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from typing import Any
 from urllib.request import getproxies, proxy_bypass
 
 from aiogram import Bot, Dispatcher
@@ -10,16 +12,20 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, TelegramObject
 from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 
-from bot.access import Roles, UserRateLimit
+from bot.access import Roles, UserRateLimit, is_billing_update
+from bot.billing_storage import BillingStore
 from bot.config import Config, ConfigError
 from bot.dialogue import DialogueIsolation, DialogueStorage
 from bot.formatting import markdown_to_html as markdown_to_html
 from bot.formatting import validate_markdown as validate_markdown
 from bot.handlers import create_router
 from bot.i18n import COMMANDS, Locale, tr
+from bot.mentor_answers import MentorAnswerer, OpenAIAnswerProvider
+from bot.monetization import MentorReplies
+from bot.payment_intake import ReceiptJournal
 from bot.personal import RETENTION_DAYS
 from bot.storage import DatabaseManager, StorageError
 
@@ -31,23 +37,42 @@ def create_dispatcher(
 ) -> Dispatcher:
     """Create an independent dispatcher and bounded in-memory dialogue storage."""
     roles = Roles(config.owner_ids, config.mentor_ids, config.editor_ids) if config else Roles()
+    provider = None
+    if config is not None and config.mentor_openai_api_key is not None:
+        provider = OpenAIAnswerProvider(config.mentor_openai_api_key, config.mentor_openai_model)
     dispatcher = Dispatcher(
-        storage=DialogueStorage(), events_isolation=DialogueIsolation(), roles=roles
+        storage=DialogueStorage(),
+        events_isolation=DialogueIsolation(),
+        roles=roles,
+        config=config,
+        answerer=MentorAnswerer(provider),
+        replies=MentorReplies(),
     )
+
+    async def fsm_for_conversation(
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if is_billing_update(event):
+            return await handler(event, data)
+        return await dispatcher.fsm(handler, event, data)
+
     dispatcher.update.outer_middleware.unregister(dispatcher.fsm)
     dispatcher.update.outer_middleware.register(UserRateLimit(request_limit, request_window))
-    dispatcher.update.outer_middleware.register(dispatcher.fsm)
+    dispatcher.update.outer_middleware.register(fsm_for_conversation)
     dispatcher.include_router(create_router())
     return dispatcher
 
 
-async def _purge_questions_periodically(db: DatabaseManager) -> None:
+async def _purge_expired_data_periodically(db: DatabaseManager) -> None:
     while True:
         await asyncio.sleep(3600)
         try:
             await db.purge_expired_questions(RETENTION_DAYS)
+            await BillingStore(db).purge_unused_intents()
         except StorageError:
-            logger.error("Scheduled question retention cleanup failed.")
+            logger.error("Scheduled retention cleanup failed.")
 
 
 async def main(config: Config | None = None, *, session: AiohttpSession | None = None) -> None:
@@ -70,6 +95,7 @@ async def main(config: Config | None = None, *, session: AiohttpSession | None =
 
     async with session, DatabaseManager(config.database_path) as db:
         await db.purge_expired_questions(RETENTION_DAYS)
+        await BillingStore(db).purge_unused_intents()
         bot = Bot(
             config.bot_token.get_secret_value(),
             session=session,
@@ -84,7 +110,8 @@ async def main(config: Config | None = None, *, session: AiohttpSession | None =
                 language_code=None if locale == Locale.RU else locale.value,
             )
         dispatcher = create_dispatcher(config)
-        retention = asyncio.create_task(_purge_questions_periodically(db))
+        journal = session.middleware.register(ReceiptJournal(db))
+        retention = asyncio.create_task(_purge_expired_data_periodically(db))
         try:
             await dispatcher.start_polling(
                 bot,
@@ -94,6 +121,7 @@ async def main(config: Config | None = None, *, session: AiohttpSession | None =
                 close_bot_session=False,
             )
         finally:
+            session.middleware.unregister(journal)
             retention.cancel()
             with suppress(asyncio.CancelledError):
                 await retention

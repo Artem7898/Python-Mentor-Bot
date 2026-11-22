@@ -14,11 +14,26 @@ Abre el selector de idioma en el Dashboard o usa `/language`. La elección de es
 | `/help` | Mostrar los comandos y su uso. |
 | `/language` | Elegir el idioma del bot. |
 | `/cancel` | Salir del diálogo para enviar una pregunta. |
+| `/ask` | Hacer una pregunta sobre Python en un chat privado. |
 | `/questions` | Consultar tus preguntas y respuestas en un chat privado. |
+| `/pro` | Iniciar la prueba si está disponible, consultar el precio de Pro o gestionar la suscripción. |
+| `/review` | Obtener una revisión estática de código Python con Pro. |
+| `/interview` | Practicar preguntas de entrevistas de Python con Pro. |
+| `/paysupport` | Obtener ayuda con pagos, renovaciones y reembolsos. |
 | `/privacy` | Consultar los datos guardados y solicitar su eliminación en un chat privado. |
 | `/run (2 + 3) ** 2` | Calcular la expresión y devolver `25`. |
 
 El evaluador admite números enteros y reales finitos con las operaciones `+ - * / // % **`. Limita la longitud de la entrada, el tamaño y la profundidad del árbol, los exponentes y la magnitud de los números. Su gramática excluye nombres, llamadas, atributos, importaciones y sentencias.
+
+### Free y Pro
+
+Free incluye todo el temario y las respuestas completas a preguntas sobre Python. El bot consulta primero sus respuestas preparadas. Una respuesta de Free puede terminar con una breve invitación a probar Pro. Pro añade práctica de entrevistas y revisión estática, que analiza fragmentos de Python sin ejecutarlos.
+
+Si tu cuenta está en Free y aún no has usado la prueba, abre `/pro` en un chat privado o elige Pro en el Dashboard. Pulsa **Iniciar prueba gratis de 3 meses**. Obtendrás acceso completo a Pro durante tres meses naturales gratis. El bot indica la fecha de vencimiento en UTC. Si el mes de vencimiento no tiene el mismo día, se usa el último día del mes.
+
+La prueba termina automáticamente y tu cuenta vuelve a Free. Durante la prueba, `/pro` muestra el precio y la compra está deshabilitada. Si las ventas están activadas, puedes contratar una suscripción de pago al terminar la prueba confirmando la factura en Telegram.
+
+Las suscripciones de pago nuevas cuestan 299 estrellas de Telegram (XTR) cada 30 días. Telegram muestra el coste de adquirir las estrellas en tu moneda local. Usa `/pro` para desactivar la renovación automática y conservar el acceso hasta el fin del período pagado. Si el bot desactivó la renovación, puedes volver a permitirla en `/pro` y reactivarla en Telegram mientras esté vigente la suscripción de pago. Para consultas de pago o solicitudes de reembolso, usa `/paysupport`. El operador tramita los reembolsos aprobados en estrellas a través de Telegram. [Pagos con estrellas de Telegram](https://core.telegram.org/bots/payments-stars)
 
 ### Privacidad y preguntas
 
@@ -27,6 +42,10 @@ Los grupos permiten consultar el catálogo de lecciones. Usa un chat privado par
 Puedes tener hasta cinco preguntas abiertas. Evita incluir tokens y datos personales. Las preguntas nuevas y las que están en revisión cuentan como abiertas. El mentor puede marcar una pregunta como en revisión y guardar una respuesta en el panel privado. Abre `/questions` para leer la respuesta o borrar una pregunta tras confirmar. Al iniciar y cada hora mientras está en marcha, el bot elimina las preguntas de más de 90 días, incluidas las respondidas.
 
 Para eliminar el perfil, el progreso, los marcadores, las lecciones completadas y las preguntas de la base de datos del bot, usa `/privacy` en un chat privado y confirma la acción. Gestiona el historial del chat desde Telegram. El operador gestiona por separado la caducidad de las copias de seguridad.
+
+Los registros de pruebas, suscripciones y pagos se conservan por separado para gestionar el acceso y el soporte de pagos. El bot guarda la activación vinculada a tu cuenta de Telegram incluso después de borrar los datos de aprendizaje para limitar la prueba a una por cuenta. Gestiona la renovación de la suscripción de pago con `/pro`.
+
+Si el operador activa OpenAI para las preguntas sin respuesta preparada, el bot pide permiso antes de enviar la pregunta. Cada permiso se aplica solo a esa pregunta.
 
 ## Instalación y arranque
 
@@ -81,11 +100,25 @@ Las variables del proceso tienen prioridad sobre `.env`. Las rutas relativas se 
 | `BOT_OWNER_IDS` | Identificadores opcionales de propietarios en Telegram, separados por comas. |
 | `BOT_MENTOR_IDS` | Identificadores opcionales de mentores en Telegram, separados por comas. |
 | `BOT_EDITOR_IDS` | Identificadores opcionales de editores en Telegram, separados por comas. |
+| `BILLING_ENABLED` | Activa las nuevas suscripciones Pro de pago. El valor predeterminado es `false`. La prueba está disponible para las cuentas que pueden activarla aunque las ventas estén deshabilitadas. |
+| `PRO_PRICE_STARS` | Precio de las nuevas suscripciones de pago. El único valor admitido es `299`. |
+| `BILLING_SUPPORT_URL` | Enlace HTTPS opcional de soporte de pagos. Configura el enlace o al menos un propietario o mentor antes de activar los pagos. |
+| `BILLING_TERMS_URL` | Enlace HTTPS opcional a las condiciones de suscripción. |
+| `MENTOR_OPENAI_API_KEY` | Secreto opcional para respuestas de OpenAI tras el consentimiento para la pregunta. |
+| `MENTOR_OPENAI_MODEL` | Modelo para la integración con OpenAI. El valor predeterminado es `gpt-4.1-mini`. |
 | `LOG_LEVEL` | Nivel de registro de la aplicación. El valor predeterminado es `INFO`. |
 | `DEBUG` | Activa los registros de depuración cuando `LOG_LEVEL` no está definido. |
 | `HTTPS_PROXY` | Variable del proceso para configurar un proxy hacia la API de Telegram cuando sea necesario. |
 
 El bot necesita acceso HTTPS saliente a `api.telegram.org`. Si utilizas un entorno en la nube con red restringida, permite ese dominio y configura el token en la administración de secretos del entorno. Un error de conexión con el proxy apunta a la red o a la configuración del proxy. Un error de autenticación devuelto por Telegram apunta al token del bot. [API de bots de Telegram](https://core.telegram.org/bots/api)
+
+### Despliegue de pagos y OpenAI
+
+La configuración habitual de desarrollo mantiene `BILLING_ENABLED=false`. Antes de activar nuevas compras, prepara un canal de soporte atendido y comprueba que funciona con `/paysupport`. Si falta un enlace de soporte, el bot dirige al usuario al diálogo privado de preguntas para contactar con los propietarios o mentores asignados. Revisa el precio y las condiciones, activa los pagos en el bot previsto y reinicia el proceso de long polling. Las suscripciones activas se pueden gestionar incluso después de desactivar nuevas compras.
+
+Para tramitar un reembolso aprobado, un operador autorizado usa el método `refundStarPayment` de Telegram con el identificador de la cuenta que pagó y el identificador del cargo en el recibo correspondiente. El bot registra el reembolso al recibir la actualización de Telegram. Si corresponde detener la renovación, desactívala por separado. [Método de reembolso](https://core.telegram.org/bots/api#refundstarpayment)
+
+Guarda las credenciales de Telegram y OpenAI en la configuración protegida del despliegue autorizado o en un archivo local `.env` privado. Configura `MENTOR_OPENAI_API_KEY` si quieres ofrecer respuestas externas a las preguntas que carezcan de respuesta preparada. Esta función requiere acceso HTTPS saliente a `api.openai.com`. [Documentación de la API de OpenAI](https://platform.openai.com/docs/overview)
 
 ### Acceso del personal
 
@@ -154,5 +187,9 @@ uv pip compile --universal --python-version 3.14 --generate-hashes --no-annotate
 CI ejecuta Ruff y pytest en Python 3.14 y 3.15, audita las dependencias del bot con pip-audit, analiza el historial Git con Gitleaks y oculta los valores detectados. También rechaza bases de despliegue y archivos dotenv rastreados, salvo la plantilla de ejemplo. Los archivos de bloqueo con hashes fijan las versiones de las dependencias de ejecución y desarrollo. Revisa y prueba sus actualizaciones junto con los cambios en los manifiestos.
 
 Las pruebas automatizadas usan actualizaciones de Telegram simuladas y bases temporales. Para una prueba manual, abre el Dashboard de un bot de pruebas en un chat privado. Cambia el idioma, recorre una ruta, prueba el modo compacto, guarda un marcador, completa una lección y responde a una prueba breve. Reinicia el bot y comprueba el progreso de dos cuentas. Envía una pregunta y comprueba el acceso con un mentor autorizado y con una cuenta sin ese rol. En un grupo, verifica que es posible consultar el catálogo y que las acciones personales remiten a un chat privado. Confirma la eliminación de un perfil de prueba con `/privacy`.
+
+Usa actualizaciones de pagos simuladas y una base temporal para comprobar el proceso de compra, la activación, la renovación, los envíos duplicados, la cancelación, los reembolsos y el acceso tras eliminar datos de aprendizaje. Para comprobar manualmente la activación de la prueba, usa un bot dedicado con las ventas desactivadas. En las pruebas automatizadas, comprueba el vencimiento, el retorno a Free y el rechazo de un segundo intento, incluso tras borrar el historial de aprendizaje.
+
+Para comprobar un pago de principio a fin sin cargos reales, crea un bot en el entorno específico de pruebas de Telegram y usa una base SQLite aparte. Ejecuta `main()` con una sesión de aiogram `AiohttpSession(api=TEST)` e importa `TEST` de `aiogram.client.telegram`. Usa el token de prueba, configura `BILLING_ENABLED=true` para esa ejecución y ajusta el proxy de la sesión si hace falta. [Entorno de pruebas de Telegram](https://core.telegram.org/bots/features#dedicated-test-environment)
 
 Si cambias los controladores o el almacenamiento, prueba los botones antiguos, los mensajes no disponibles, las preguntas vacías y las actualizaciones simultáneas de una cuenta. Si cambias la validación, prueba la ausencia del token, la omisión de secretos en los mensajes de error, las expresiones inválidas y los límites numéricos. Si cambias las lecciones o las traducciones, verifica la navegación, el escapado del código y la longitud de los mensajes de Telegram.

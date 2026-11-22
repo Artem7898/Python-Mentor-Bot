@@ -14,11 +14,26 @@ Open the language picker from the Dashboard or use `/language`. Your choice of E
 | `/help` | Show commands and usage. |
 | `/language` | Choose the bot language. |
 | `/cancel` | Exit the current question dialogue. |
+| `/ask` | Ask a Python question in a private chat. |
 | `/questions` | View your submitted questions and replies in a private chat. |
+| `/pro` | Start an eligible free trial, see the Pro price, or manage your subscription. |
+| `/review` | Get a static review of a Python snippet with Pro. |
+| `/interview` | Practice Python interview questions with Pro. |
+| `/paysupport` | Find help with payments, renewals, and refunds. |
 | `/privacy` | Review stored data and request deletion in a private chat. |
 | `/run (2 + 3) ** 2` | Evaluate the expression and return `25`. |
 
 The expression evaluator supports integers and finite real numbers with `+ - * / // % **`. It limits input length, tree size, nesting, exponents, and numeric magnitude. Its grammar excludes names, calls, attributes, imports, and statements.
+
+### Free and Pro
+
+Free includes the full curriculum and complete answers to Python questions. The bot checks its built-in answers first. A Free answer can end with a short invitation to try Pro. Pro adds interview practice and static code review, which inspects Python snippets without running them.
+
+If your account is on Free and has never used the trial, open `/pro` in a private chat or choose Pro from the Dashboard, then tap **Start 3-month free trial**. The trial gives you full Pro access for three calendar months at zero cost. The bot shows the expiry in UTC. If the end month has no matching day, the trial ends on its last day.
+
+The trial expires automatically and your account returns to Free. During the trial, `/pro` shows the paid price and keeps purchasing unavailable. After the trial, if sales are enabled, you can start a paid subscription by confirming a Telegram invoice.
+
+New paid subscriptions cost 299 Telegram Stars (XTR) every 30 days. Telegram shows the actual cost of buying Stars in your local currency. Use `/pro` to turn off automatic renewal and keep access until the paid period ends. If the bot disabled renewal, you can unlock it from `/pro` and re-enable it in Telegram while the paid subscription is active. For payment questions or refund requests, use `/paysupport`. The operator issues approved refunds in Stars through Telegram. [Telegram Stars payments](https://core.telegram.org/bots/payments-stars)
 
 ### Privacy and questions
 
@@ -27,6 +42,10 @@ Group chats can browse the lesson catalog. Use a private chat for your profile, 
 Submit up to five open questions at a time. Keep tokens and personal information out of your questions. Open questions include new questions and those under review. Authorized mentors can mark a question as under review and save an answer in the private mentor panel. Open `/questions` to read a reply or remove a question after confirming. At startup and every hour while running, the bot purges questions older than 90 days, including answered questions.
 
 To delete your profile, progress, bookmarks, completion records, and questions from the bot's database, use `/privacy` in a private chat and confirm the deletion. Manage Telegram chat history separately in Telegram. Operators manage expiry of older backups separately.
+
+Trial, subscription, and payment records are retained separately for access and payment support. The bot keeps the trial claim tied to your Telegram account to enforce one trial per account, even after you delete learning data. Use `/pro` to manage paid renewal.
+
+If the operator enables OpenAI for questions without a built-in answer, the bot asks permission before sending the question. Each consent applies to that question only.
 
 ## Install and run
 
@@ -81,11 +100,25 @@ Process environment values take precedence over settings in `.env`. Relative pat
 | `BOT_OWNER_IDS` | Optional comma-separated Telegram user IDs of owners. |
 | `BOT_MENTOR_IDS` | Optional comma-separated Telegram user IDs of mentors. |
 | `BOT_EDITOR_IDS` | Optional comma-separated Telegram user IDs of editors. |
+| `BILLING_ENABLED` | Enable new paid Pro subscriptions. Default is `false`. Eligible accounts can start a trial with sales disabled. |
+| `PRO_PRICE_STARS` | Price for new paid subscriptions. The only accepted value is `299`. |
+| `BILLING_SUPPORT_URL` | Optional HTTPS payment support link. Configure this link or at least one owner or mentor before enabling billing. |
+| `BILLING_TERMS_URL` | Optional HTTPS link to the subscription terms. |
+| `MENTOR_OPENAI_API_KEY` | Optional secret for OpenAI answers after per-question consent. |
+| `MENTOR_OPENAI_MODEL` | Model for the OpenAI integration. Default is `gpt-4.1-mini`. |
 | `LOG_LEVEL` | Application log level. Default is `INFO`. |
 | `DEBUG` | Enables debug logging when `LOG_LEVEL` is unset. |
 | `HTTPS_PROXY` | Process environment variable for the proxy to the Telegram API, when required. |
 
 The bot needs outbound HTTPS access to `api.telegram.org`. For a restricted cloud environment, allow that hostname and set the token through the environment’s secret settings. A proxy connection error points to the network path or the proxy configuration. An authentication error returned by Telegram points to the bot token. [Telegram Bot API](https://core.telegram.org/bots/api)
+
+### Deploying billing and optional AI
+
+The standard development configuration leaves `BILLING_ENABLED=false`. Before enabling new purchases, configure a staffed support route and verify that `/paysupport` reaches it. With no support URL, the bot directs users to the private question flow for the configured owners or mentors. Review the price and terms, then enable billing on the intended bot and restart polling. Turning off new purchases leaves existing subscriptions available for management.
+
+For an approved refund, use the deployment's authorized access to call Telegram's `refundStarPayment` with the payer's Telegram user ID and the charge ID from the corresponding receipt. The bot reconciles the refund from Telegram's update. Manage renewal separately if the subscription should stop renewing. [Refund method](https://core.telegram.org/bots/api#refundstarpayment)
+
+Supply Telegram and OpenAI credentials through the authorized deployment's secret settings or a private local `.env`. Set `MENTOR_OPENAI_API_KEY` only if you want to offer external answers for questions without a built-in answer. This feature requires outbound HTTPS access to `api.openai.com`. [OpenAI API documentation](https://platform.openai.com/docs/overview)
 
 ### Staff access
 
@@ -154,5 +187,9 @@ uv pip compile --universal --python-version 3.14 --generate-hashes --no-annotate
 CI runs Ruff and pytest on Python 3.14 and 3.15, audits runtime dependencies with pip-audit, scans Git history with redacted Gitleaks output, and rejects tracked deployment databases and dotenv files except the example template. The hash-checked lock files pin runtime and development dependencies. Review and test lock-file updates alongside changes to the dependency manifests.
 
 Automated tests use simulated Telegram updates and temporary databases. For a live smoke check, use a dedicated test bot and open the Dashboard from a private chat. Switch languages, browse a learning path, try compact mode, bookmark and complete a lesson, and answer a short quiz. Restart the bot and check saved progress from two accounts. Submit a question and check access with an authorized mentor and an ordinary account. Verify that a group permits catalog browsing and sends personal actions to a private chat. Confirm deletion with `/privacy` on a test profile.
+
+Use simulated Telegram payment updates and a temporary database to check checkout, activation, renewal, duplicate delivery, cancellation, refunds, and continued access after deleting learning data. Use a dedicated bot with billing disabled for manual trial activation. In automated checks, verify expiry, the return to Free, and rejection of a second trial, including after learning-data deletion.
+
+For an end-to-end payment check without real charges, create a bot in Telegram's dedicated test environment and use a separate SQLite database. Start `main()` with an `AiohttpSession(api=TEST)` from aiogram using `TEST` from `aiogram.client.telegram`. Supply the test token, set `BILLING_ENABLED=true` for that run, and configure the session's proxy if required. [Telegram test environment](https://core.telegram.org/bots/features#dedicated-test-environment)
 
 For changes to handlers or storage, cover stale callbacks, unavailable messages, empty questions, and overlapping updates from one account. For changes to validation, cover absent tokens, redacted errors, invalid expressions, and numeric limits. For changes to lessons or translations, verify chapter navigation, code escaping, and Telegram message length.
