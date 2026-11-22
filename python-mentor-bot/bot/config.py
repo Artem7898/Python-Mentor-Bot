@@ -12,11 +12,20 @@ from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+type TelegramId = Annotated[int, Field(gt=0, le=2**63 - 1)]
 
 DEFAULT_DATABASE_PATH = Path("data/python_mentor.db")
 
 _TOKEN_PATTERN = re.compile(r"[1-9][0-9]{0,19}:[A-Za-z0-9_-]+")
-_SETTINGS_KEYS = ("BOT_TOKEN", "DATABASE_PATH", "LOG_LEVEL", "DEBUG")
+_SETTINGS_KEYS = (
+    "BOT_TOKEN",
+    "DATABASE_PATH",
+    "LOG_LEVEL",
+    "DEBUG",
+    "BOT_OWNER_IDS",
+    "BOT_MENTOR_IDS",
+    "BOT_EDITOR_IDS",
+)
 
 
 class ConfigError(ValueError):
@@ -40,6 +49,15 @@ class Config(BaseModel):
     ]
     database_path: Annotated[Path, Field(validation_alias="DATABASE_PATH")] = DEFAULT_DATABASE_PATH
     log_level: Annotated[LogLevel, Field(validation_alias="LOG_LEVEL")] = "INFO"
+    owner_ids: Annotated[frozenset[TelegramId], Field(validation_alias="BOT_OWNER_IDS")] = (
+        frozenset()
+    )
+    mentor_ids: Annotated[frozenset[TelegramId], Field(validation_alias="BOT_MENTOR_IDS")] = (
+        frozenset()
+    )
+    editor_ids: Annotated[frozenset[TelegramId], Field(validation_alias="BOT_EDITOR_IDS")] = (
+        frozenset()
+    )
 
     @field_validator("bot_token")
     @classmethod
@@ -64,6 +82,25 @@ class Config(BaseModel):
     def normalize_log_level(cls, value: object) -> object:
         """Permit case-insensitive logging levels in environment variables."""
         return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("owner_ids", "mentor_ids", "editor_ids", mode="before")
+    @classmethod
+    def parse_role_ids(cls, value: object) -> frozenset[TelegramId]:
+        """Parse comma-separated positive Telegram account IDs."""
+        if isinstance(value, frozenset):
+            return value
+        if not isinstance(value, str):
+            raise ValueError("expected a comma-separated list of Telegram user IDs")
+        if not value.strip():
+            return frozenset()
+
+        identifiers = tuple(item.strip() for item in value.split(","))
+        if any(
+            len(identifier) > 19 or not identifier.isascii() or not identifier.isdecimal()
+            for identifier in identifiers
+        ):
+            raise ValueError("expected a comma-separated list of decimal Telegram user IDs")
+        return frozenset(map(int, identifiers))
 
     @classmethod
     def load(

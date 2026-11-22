@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage, TelegramMethod
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.methods import AnswerCallbackQuery, EditMessageText, GetMe, SendMessage, TelegramMethod
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, User
 
 from bot.storage import DatabaseManager
 from main import create_dispatcher
@@ -22,12 +22,13 @@ USER = {"id": 19, "is_bot": False, "first_name": "Test", "username": "mentor_stu
 CHAT = {"id": USER["id"], "type": "private"}
 QUESTION_MENU = "❓ Задать вопрос"
 DASHBOARD_ACTIONS = {
-    "dashboard:topics",
+    "study:catalog",
     "dashboard:examples",
     "dashboard:ask",
-    "dashboard:progress",
+    "study:progress",
+    "study:bookmarks",
+    "study:settings",
     "dashboard:install",
-    "languages",
 }
 LANGUAGE_ACTIONS = {"lang:en", "lang:es", "lang:ru"}
 
@@ -113,8 +114,10 @@ async def telegram(
         _bot: Bot,
         method: TelegramMethod[Any],
         timeout: int | None = None,
-    ) -> bool:
+    ) -> bool | User:
         requests.append(method)
+        if isinstance(method, GetMe):
+            return User(id=123, is_bot=True, first_name="Mentor", username="mentor_test_bot")
         return True
 
     monkeypatch.setattr(AiohttpSession, "make_request", capture)
@@ -141,7 +144,8 @@ def test_start_and_lesson_navigation_keep_progress(
             await client.message("/start")
             await client.message("📊 Мой прогресс")
             assert "прогресс" in client.last_message().text.casefold()
-            assert "mentor_student" in client.last_message().text
+            assert "0" in client.last_message().text
+            assert await client.db.get_last_lesson(19) == "oop.intro"
             user = await client.db.get_user(19)
             assert user is not None
             assert user.current_topic == "oop"
@@ -162,7 +166,7 @@ def test_help_and_nontext_do_not_become_questions(
             assert "/help" in client.last_message().text
 
             await client.message("📚 Темы обучения")
-            assert "Выбери тему" in client.last_message().text
+            assert "Каталог уроков" in client.last_message().text
             await client.message(
                 photo=[{"file_id": "photo", "file_unique_id": "unique", "width": 10, "height": 10}]
             )
@@ -234,7 +238,7 @@ def test_legacy_back_to_main_opens_the_dashboard(
 
 @pytest.mark.parametrize(
     ("locale", "topics_label"),
-    [("en-US", "lessons"), ("es-MX", "lecciones"), ("de-DE", "тем"), (None, "тем")],
+    [("en-US", "catalogue"), ("es-MX", "catálogo"), ("de-DE", "каталог"), (None, "каталог")],
 )
 def test_dashboard_has_styled_native_buttons_in_the_initial_locale(
     tmp_path: Path,
@@ -247,7 +251,7 @@ def test_dashboard_has_styled_native_buttons_in_the_initial_locale(
             await client.message("/start")
             buttons = client.inline_buttons()
             assert DASHBOARD_ACTIONS <= buttons.keys()
-            assert topics_label in buttons["dashboard:topics"].text.casefold()
+            assert topics_label in buttons["study:catalog"].text.casefold()
             assert all(1 <= len(payload.encode()) <= 64 for payload in buttons)
             assert any(
                 button.style in {"primary", "success", "danger"} for button in buttons.values()
@@ -264,11 +268,10 @@ def test_dashboard_callbacks_open_each_learning_flow(
             await client.message("/start")
             await client.callback("dashboard:topics")
             assert {
-                "topic:basics",
-                "topic:django",
-                "topic:drf",
-                "topic:fastapi",
-                "topic:pydantic",
+                "study:catalog:python",
+                "study:catalog:backend",
+                "study:catalog:practice",
+                "study:search",
             } <= client.inline_buttons().keys()
 
             await client.callback("dashboard:examples")
@@ -278,7 +281,7 @@ def test_dashboard_callbacks_open_each_learning_flow(
             assert "Windows" in client.last_display().text
 
             await client.callback("dashboard:progress")
-            assert "mentor_student" in client.last_display().text
+            assert "прогресс" in client.last_display().text.casefold()
 
             await client.callback("dashboard:ask")
             assert "вопрос" in client.last_display().text.casefold()
@@ -304,7 +307,7 @@ def test_explicit_language_selection_persists_across_process_restart(
             assert LANGUAGE_ACTIONS <= client.inline_buttons().keys()
             before_selection = len(client.requests)
             await client.callback("lang:es")
-            assert "lecciones" in client.inline_buttons()["dashboard:topics"].text.casefold()
+            assert "catálogo" in client.inline_buttons()["study:catalog"].text.casefold()
             assert any(
                 isinstance(request, AnswerCallbackQuery)
                 for request in client.requests[before_selection:]
@@ -313,7 +316,7 @@ def test_explicit_language_selection_persists_across_process_restart(
     async def reopen() -> None:
         async with telegram(db_path, monkeypatch, language_code="ru") as client:
             await client.message("/start")
-            assert "lecciones" in client.inline_buttons()["dashboard:topics"].text.casefold()
+            assert "catálogo" in client.inline_buttons()["study:catalog"].text.casefold()
             await client.callback("dashboard:progress")
             assert "progreso" in client.last_display().text.casefold()
             await client.message("/language")
@@ -348,16 +351,16 @@ def test_english_topics_link_to_each_new_chapter(
 ) -> None:
     async def scenario() -> None:
         async with telegram(tmp_path / "bot.db", monkeypatch, language_code="en") as client:
-            await client.callback("dashboard:topics")
+            await client.callback("study:catalog:backend")
             buttons = client.inline_buttons()
-            assert "Choose a lesson topic" in client.last_display().text
+            assert "Web and APIs" in client.last_display().text
             for topic, title in (
                 ("django", "Django"),
                 ("drf", "Django REST Framework"),
                 ("fastapi", "FastAPI"),
                 ("pydantic", "Pydantic"),
             ):
-                assert title in buttons[f"topic:{topic}"].text
+                assert title in buttons[f"study:contents:{topic}"].text
                 await client.callback(f"topic:{topic}")
                 assert title in client.last_display().text
                 assert isinstance(client.requests[-1], AnswerCallbackQuery)
@@ -365,7 +368,7 @@ def test_english_topics_link_to_each_new_chapter(
     asyncio.run(scenario())
 
 
-def test_group_language_choice_posts_without_editing_the_shared_dashboard(
+def test_group_language_choice_redirects_and_does_not_save_a_preference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
@@ -376,8 +379,44 @@ def test_group_language_choice_posts_without_editing_the_shared_dashboard(
             display = client.last_display()
             assert isinstance(display, SendMessage)
             assert display.chat_id == -123
-            assert "lecciones" in client.inline_buttons()["dashboard:topics"].text.casefold()
+            assert isinstance(display.reply_markup, InlineKeyboardMarkup)
+            assert display.reply_markup.inline_keyboard[0][0].url == (
+                "https://t.me/mentor_test_bot?start=menu"
+            )
             assert not any(isinstance(request, EditMessageText) for request in client.requests)
-            assert await client.db.get_language(19) == "es"
+            assert await client.db.get_language(19) is None
+
+    asyncio.run(scenario())
+
+
+def test_private_study_flow_tracks_stable_ids_and_reveals_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def scenario() -> None:
+        async with telegram(tmp_path / "bot.db", monkeypatch, language_code="en") as client:
+            await client.message("/start")
+            assert (
+                "Start with the basics" in client.inline_buttons()["study:open:basics.intro"].text
+            )
+            await client.callback("study:open:basics.intro")
+            assert "<pre><code" not in client.last_display().text
+            await client.callback("code:basics:0")
+            assert "<pre><code" in client.last_display().text
+            await client.callback("study:complete:basics.intro")
+            await client.callback("study:complete:basics.intro")
+            await client.callback("study:bookmark:basics.intro:1")
+            assert await client.db.list_completed_lessons(19) == ("basics.intro",)
+            assert await client.db.list_bookmarks(19) == ("basics.intro",)
+            await client.callback("study:bookmarks")
+            assert "study:open:basics.intro" in client.inline_buttons()
+            await client.callback("study:search")
+            await client.message("Django")
+            assert any(key.startswith("study:open:django.") for key in client.inline_buttons())
+            await client.callback("study:quiz:basics.intro")
+            assert any(
+                key.startswith("study:quiz:basics.intro:") for key in client.inline_buttons()
+            )
+            await client.message("/start")
+            assert "Continue lesson" in client.inline_buttons()["study:open:basics.intro"].text
 
     asyncio.run(scenario())

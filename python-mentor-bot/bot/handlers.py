@@ -1,38 +1,56 @@
 """Telegram dashboard, lesson navigation and localized conversation handlers."""
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, TypeIs
+from typing import Any, Literal
 
-from aiogram import BaseMiddleware, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram import BaseMiddleware, Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandObject, CommandStart, ExceptionTypeFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
     ErrorEvent,
-    InaccessibleMessage,
     InlineKeyboardMarkup,
     Message,
     TelegramObject,
-    User,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp_socks import ProxyConnectionError, ProxyError, ProxyTimeoutError
 
+from bot.access import ChatEvent, Roles, has_private_chat, telegram_user
 from bot.evaluator import EvaluationError, evaluate_expression
 from bot.formatting import escape_html, format_code
 from bot.i18n import COMMANDS, LANGUAGE_NAMES, Locale, resolve_locale, tr
+from bot.lesson_models import LessonLevel
 from bot.lessons import LessonManager, LessonPage, LessonTopic
-from bot.storage import DatabaseManager, StorageError
+from bot.personal import ask_question, register_personal_routes
+from bot.presentation import is_accessible, present, require_private
+from bot.storage import DatabaseManager, LearnerPreferences, StorageError
+from bot.study_copy import study_tr
+from bot.study_ui import (
+    bookmarks_view,
+    catalog_view,
+    contents_view,
+    dashboard_view,
+    lesson_actions,
+    lesson_id,
+    lesson_location,
+    progress_view,
+    quiz_view,
+    search_view,
+    settings_view,
+)
 
 logger = logging.getLogger(__name__)
 
 _TOPICS = (
     LessonTopic.BASICS,
     LessonTopic.SYNTAX,
+    LessonTopic.PYTHON_314,
+    LessonTopic.PYTHON_315,
     LessonTopic.OOP,
     LessonTopic.FILES,
     LessonTopic.FRAMEWORKS,
@@ -43,6 +61,7 @@ _TOPICS = (
     LessonTopic.TOOLS,
     LessonTopic.DATASCIENCE,
     LessonTopic.ASYNC,
+    LessonTopic.TEST,
 )
 _LEGACY_ACTIONS = {
     "📚 Темы обучения": "topics",
@@ -56,7 +75,7 @@ _LEGACY_ACTIONS = {
 class Conversation(StatesGroup):
     """State for questions that need a follow-up message."""
 
-    waiting_question = State()
+    search = State()
 
 
 class LocaleMiddleware(BaseMiddleware):
@@ -68,9 +87,13 @@ class LocaleMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        sender = event.from_user if isinstance(event, (Message, CallbackQuery)) else None
+        sender = telegram_user(event) if isinstance(event, (Message, CallbackQuery)) else None
         db: DatabaseManager = data["db"]
-        chosen = await db.get_language(sender.id) if sender else None
+        chosen = (
+            await db.get_language(sender.id)
+            if sender and isinstance(event, (Message, CallbackQuery)) and has_private_chat(event)
+            else None
+        )
         data["locale"] = resolve_locale(chosen or (sender.language_code if sender else None))
         return await handler(event, data)
 
@@ -82,11 +105,6 @@ class LessonSelection:
     topic: LessonTopic
     page: int
     view: Literal["lesson", "code"]
-
-
-def is_accessible(message: Message | InaccessibleMessage | None) -> TypeIs[Message]:
-    """Narrow an optional Telegram callback message to an accessible one."""
-    return isinstance(message, Message)
 
 
 def parse_selection(data: str, locale: Locale = Locale.RU) -> LessonSelection | None:
@@ -112,17 +130,6 @@ def parse_selection(data: str, locale: Locale = Locale.RU) -> LessonSelection | 
     return LessonSelection(topic, page, "code" if action == "code" else "lesson")
 
 
-def dashboard_keyboard(locale: Locale) -> InlineKeyboardMarkup:
-    """Build the Telegram dashboard with the lessons action emphasized."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text=tr(locale, "topics"), callback_data="dashboard:topics", style="primary")
-    for action in ("examples", "progress", "ask", "install"):
-        builder.button(text=tr(locale, action), callback_data=f"dashboard:{action}")
-    builder.button(text=tr(locale, "language"), callback_data="languages")
-    builder.adjust(1, 2, 2, 1)
-    return builder.as_markup()
-
-
 def language_keyboard(locale: Locale) -> InlineKeyboardMarkup:
     """Show the three languages in their own names."""
     builder = InlineKeyboardBuilder()
@@ -139,12 +146,12 @@ def language_keyboard(locale: Locale) -> InlineKeyboardMarkup:
 
 def _code_sections(page: LessonPage, locale: Locale) -> list[tuple[str, str, str]]:
     sections = (
-        ("💻 Windows", page.windows_code, "python"),
-        ("🐧 Linux", page.linux_code, "python"),
+        ("💻 Windows", page.windows_code, "text"),
+        ("🐧 Linux", page.linux_code, "text"),
         (tr(locale, "install_code"), page.install_code, "bash"),
         (tr(locale, "windows_install"), page.windows_install, "bash"),
         (tr(locale, "linux_install"), page.linux_install, "bash"),
-        (tr(locale, "example"), page.example_code, "python"),
+        (tr(locale, "example"), page.example_code, page.example_language),
     )
     return [(title, code, language) for title, code, language in sections if code]
 
@@ -216,7 +223,13 @@ def lesson_keyboard(
     return builder.as_markup()
 
 
-def lesson_text(selection: LessonSelection, page: LessonPage, locale: Locale = Locale.RU) -> str:
+def lesson_text(
+    selection: LessonSelection,
+    page: LessonPage,
+    locale: Locale = Locale.RU,
+    *,
+    compact: bool = False,
+) -> str:
     """Render the selected page as escaped Telegram HTML."""
     title = escape_html(page.title)
     if selection.view == "code":
@@ -226,54 +239,72 @@ def lesson_text(selection: LessonSelection, page: LessonPage, locale: Locale = L
         explanation = escape_html(page.explanation)
         # Preserve authored bold headings in the bundled catalogue.
         explanation = explanation.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
-        body = [f"<b>{topic_title}</b>", f"<b>{title}</b>", explanation]
+        level = tr(locale, f"level_{page.level}")
+        body = [f"<b>{topic_title}</b>\n{level}", f"<b>{title}</b>", explanation]
         if page.steps:
             body.append("\n".join(f"• {escape_html(step)}" for step in page.steps))
 
-    for label, code, language in _code_sections(page, locale):
-        body.append(f"<b>{label}:</b>\n{format_code(code, language)}")
+    sections = _code_sections(page, locale)
+    if compact and selection.view == "lesson":
+        if sections:
+            body.append(study_tr(locale, "compact_hint"))
+    else:
+        for label, code, language in sections:
+            body.append(f"<b>{label}:</b>\n{format_code(code, language)}")
 
     return "\n\n".join(body)
 
 
-async def _present(
-    event: Message | CallbackQuery, text: str, markup: InlineKeyboardMarkup | None = None
-) -> None:
-    if isinstance(event, Message):
-        await event.answer(text, reply_markup=markup)
-        return
-    message = event.message
-    if not is_accessible(message):
-        return
-    if message.chat.type != "private":
-        # Editing a shared dashboard would replace everyone else's language and view.
-        await message.answer(text, reply_markup=markup)
-        return
-    try:
-        await message.edit_text(text, reply_markup=markup)
-    except TelegramBadRequest as exc:
-        if "message is not modified" not in exc.message.casefold():
-            raise
+async def _preferences(event: ChatEvent, db: DatabaseManager) -> LearnerPreferences:
+    sender = telegram_user(event)
+    if sender and has_private_chat(event):
+        return await db.get_preferences(sender.id)
+    return LearnerPreferences()
+
+
+async def _resume(db: DatabaseManager, user_id: int) -> str | None:
+    stable = await db.get_last_lesson(user_id)
+    if stable and lesson_location(stable):
+        return stable
+    previous = await db.get_user(user_id)
+    if previous and (previous.current_topic != LessonTopic.BASICS or previous.current_page != 0):
+        return lesson_id(previous.current_topic, previous.current_page)
+    return None
+
+
+async def _dashboard(event: ChatEvent, db: DatabaseManager, locale: Locale) -> None:
+    sender = telegram_user(event)
+    resume = await _resume(db, sender.id) if sender and has_private_chat(event) else None
+    await present(event, *dashboard_view(locale, resume))
 
 
 async def start(message: Message, state: FSMContext, db: DatabaseManager, locale: Locale) -> None:
-    """Register the learner and show their localized dashboard."""
-    if message.from_user:
-        await db.get_or_create_user(message.from_user.id, message.from_user.username)
+    """Start the course and show a public or personalized dashboard."""
+    sender = telegram_user(message)
+    if sender and has_private_chat(message):
+        await db.get_or_create_user(sender.id, sender.username)
     await state.clear()
-    await _present(message, tr(locale, "home"), dashboard_keyboard(locale))
+    await _dashboard(message, db, locale)
 
 
-async def help_command(message: Message, locale: Locale) -> None:
+async def help_command(message: Message, locale: Locale, roles: Roles) -> None:
     """Show localized command descriptions without changing the dialogue state."""
-    lines = (f"/{command} — {tr(locale, key)}" for command, key in COMMANDS)
+    commands = list(COMMANDS)
+    sender = telegram_user(message)
+    if sender and has_private_chat(message):
+        if roles.can_mentor(sender.id):
+            commands.append(("mentor", "mentor_cmd"))
+        if roles.can_edit(sender.id):
+            commands.append(("editor", "editor_cmd"))
+    lines = (f"/{command} — {tr(locale, key)}" for command, key in commands)
     await message.answer("\n".join((f"<b>{tr(locale, 'help_title')}</b>", *lines)))
 
 
-async def cancel(message: Message, state: FSMContext, locale: Locale) -> None:
-    """Cancel a pending question."""
+async def cancel(message: Message, state: FSMContext, locale: Locale, db: DatabaseManager) -> None:
+    """Cancel a private conversation and return to the dashboard."""
     await state.clear()
-    await _present(message, tr(locale, "cancelled"), dashboard_keyboard(locale))
+    await message.answer(tr(locale, "cancelled"))
+    await _dashboard(message, db, locale)
 
 
 async def run_expression(message: Message, command: CommandObject, locale: Locale) -> None:
@@ -291,135 +322,128 @@ async def run_expression(message: Message, command: CommandObject, locale: Local
     await message.answer(f"<b>{tr(locale, 'result')}:</b> <code>{result}</code>")
 
 
+async def _progress(event: ChatEvent, db: DatabaseManager, locale: Locale, bot: Bot) -> None:
+    if not await require_private(event, locale, bot):
+        return
+    sender = telegram_user(event)
+    if not sender:
+        return
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    done = await db.list_completed_lessons(sender.id)
+    await present(event, *progress_view(locale, done, await _resume(db, sender.id)))
+
+
 async def _show_dashboard_action(
-    event: Message | CallbackQuery,
-    action: str,
-    state: FSMContext,
-    db: DatabaseManager,
-    locale: Locale,
+    event: ChatEvent, action: str, state: FSMContext, db: DatabaseManager, locale: Locale, bot: Bot
 ) -> None:
+    if action == "ask":
+        await ask_question(event, state, locale, bot)
+        return
+    if action == "progress":
+        await _progress(event, db, locale, bot)
+        return
+    if isinstance(event, CallbackQuery):
+        await event.answer()
     match action:
-        case "topics" | "examples":
-            examples = action == "examples"
-            await _present(
-                event,
-                tr(locale, "choose_example" if examples else "choose_topic"),
-                topics_keyboard(locale, examples=examples),
+        case "topics":
+            prefs = await _preferences(event, db)
+            await present(event, *catalog_view(locale, level=prefs.level))
+        case "examples":
+            await present(
+                event, tr(locale, "choose_example"), topics_keyboard(locale, examples=True)
             )
         case "install":
-            selection = LessonSelection(LessonTopic.INSTALL, 0, "lesson")
-            page = LessonManager.get_topic_content(selection.topic, selection.page, locale)
-            if page is None:
-                await _present(event, tr(locale, "invalid_page"))
-            else:
-                await _present(
-                    event,
-                    lesson_text(selection, page, locale),
-                    lesson_keyboard(selection, page, locale),
-                )
-        case "ask":
-            await _present(event, tr(locale, "ask_prompt"), dashboard_keyboard(locale))
-            await state.set_state(Conversation.waiting_question)
-        case "progress":
-            await _show_progress(event, event.from_user, db, locale)
+            await _show_lesson(event, LessonSelection(LessonTopic.INSTALL, 0, "lesson"), db, locale)
         case _:
-            await _present(event, tr(locale, "home"), dashboard_keyboard(locale))
+            await _dashboard(event, db, locale)
 
 
 async def legacy_action(
-    message: Message, state: FSMContext, db: DatabaseManager, locale: Locale
+    message: Message, state: FSMContext, db: DatabaseManager, locale: Locale, bot: Bot
 ) -> None:
     """Accept previously issued Telegram reply-keyboard buttons."""
-    await _show_dashboard_action(message, _LEGACY_ACTIONS[message.text or ""], state, db, locale)
+    await _show_dashboard_action(
+        message, _LEGACY_ACTIONS[message.text or ""], state, db, locale, bot
+    )
 
 
 async def dashboard_action(
-    callback: CallbackQuery, state: FSMContext, db: DatabaseManager, locale: Locale
+    callback: CallbackQuery, state: FSMContext, db: DatabaseManager, locale: Locale, bot: Bot
 ) -> None:
     """Navigate an existing dashboard, including links from older menus."""
     if not is_accessible(callback.message):
         await callback.answer(tr(locale, "invalid_message"))
         return
-    action = {
-        "show_topics": "topics",
-        "back_to_main": "home",
-    }.get(callback.data or "", (callback.data or "").removeprefix("dashboard:"))
-    await callback.answer()
-    await _show_dashboard_action(callback, action, state, db, locale)
+    data = callback.data or ""
+    action = {"show_topics": "topics", "back_to_main": "home"}.get(
+        data, data.removeprefix("dashboard:")
+    )
+    await _show_dashboard_action(callback, action, state, db, locale, bot)
 
 
-async def show_languages(event: Message | CallbackQuery, locale: Locale) -> None:
+async def show_languages(event: ChatEvent, locale: Locale, bot: Bot) -> None:
     """Open the language picker via its button or /language."""
+    if not await require_private(event, locale, bot):
+        return
     if isinstance(event, CallbackQuery):
-        if not is_accessible(event.message):
-            await event.answer(tr(locale, "invalid_message"))
-            return
         await event.answer()
-    await _present(event, tr(locale, "picker"), language_keyboard(locale))
+    await present(event, tr(locale, "picker"), language_keyboard(locale))
 
 
-async def choose_language(callback: CallbackQuery, db: DatabaseManager, locale: Locale) -> None:
-    """Persist the selected language for the user who pressed the button."""
+async def choose_language(
+    callback: CallbackQuery, db: DatabaseManager, locale: Locale, bot: Bot
+) -> None:
+    """Persist the language for the person who pressed the button in private."""
+    if not await require_private(callback, locale, bot):
+        return
     try:
         selected = Locale((callback.data or "").removeprefix("lang:"))
     except ValueError:
         await callback.answer(tr(locale, "unsupported"))
         return
-    if not is_accessible(callback.message):
-        await callback.answer(tr(locale, "invalid_message"))
+    sender = telegram_user(callback)
+    if sender is None:
         return
-    sender = callback.from_user
     await db.get_or_create_user(sender.id, sender.username)
     await db.set_language(sender.id, selected.value)
     await callback.answer(tr(selected, "saved"))
-    await _present(callback, tr(selected, "home"), dashboard_keyboard(selected))
+    await _dashboard(callback, db, selected)
 
 
-async def record_question(
-    message: Message, state: FSMContext, db: DatabaseManager, locale: Locale
-) -> None:
-    """Persist a nonempty text question and close the dialogue."""
-    sender = message.from_user
-    question = (message.text or "").strip()
-    if sender is None or not question or len(question) > 4096:
-        await message.answer(tr(locale, "ask_validation"))
-        return
-    await db.get_or_create_user(sender.id, sender.username)
-    await db.save_question(sender.id, question)
-    await state.clear()
-    await _present(message, tr(locale, "ask_saved"), dashboard_keyboard(locale))
-
-
-async def _show_progress(
-    event: Message | CallbackQuery, sender: User | None, db: DatabaseManager, locale: Locale
-) -> None:
-    user = await db.get_user(sender.id) if sender else None
-    if user is None:
-        await _present(event, tr(locale, "no_progress"), dashboard_keyboard(locale))
-        return
-    topic = LessonManager.get_topic_title(user.current_topic, locale) or user.current_topic.value
-    keyboard = InlineKeyboardBuilder()
-    if user.current_page < LessonManager.get_total_pages(user.current_topic, locale):
-        keyboard.button(
-            text=tr(locale, "resume"),
-            callback_data=f"topic:{user.current_topic.value}:{user.current_page}",
-            style="primary",
+async def _show_lesson(
+    event: ChatEvent,
+    selection: LessonSelection,
+    db: DatabaseManager,
+    locale: Locale,
+    *,
+    record: bool = True,
+) -> bool:
+    page = LessonManager.get_topic_content(selection.topic, selection.page, locale)
+    if page is None or (selection.view == "code" and not _code_sections(page, locale)):
+        return False
+    sender = telegram_user(event)
+    prefs = await _preferences(event, db)
+    markup = lesson_keyboard(selection, page, locale)
+    key = lesson_id(selection.topic, selection.page)
+    private = sender is not None and has_private_chat(event)
+    if key and sender and private and selection.view == "lesson":
+        actions = lesson_actions(
+            locale,
+            key,
+            bookmark=key in await db.list_bookmarks(sender.id),
+            completed=key in await db.list_completed_lessons(sender.id),
         )
-    keyboard.button(text=tr(locale, "dashboard"), callback_data="dashboard:home")
-    keyboard.adjust(1)
-    await _present(
-        event,
-        f"<b>{tr(locale, 'progress')}</b>\n\n"
-        f"👤 {tr(locale, 'learner')}: {escape_html(user.username or tr(locale, 'anonymous'))}\n"
-        f"🎯 {tr(locale, 'current_topic')}: {escape_html(topic)}\n"
-        f"📄 {tr(locale, 'page')}: {user.current_page + 1}\n"
-        f"📅 {tr(locale, 'joined')}: {user.created_at:%Y-%m-%d}",
-        keyboard.as_markup(),
-    )
+        markup.inline_keyboard.extend([button] for button in actions)
+    await present(event, lesson_text(selection, page, locale, compact=prefs.compact), markup)
+    if key and sender and private and selection.view == "lesson" and record:
+        await db.get_or_create_user(sender.id, sender.username)
+        await db.record_lesson_visit(sender.id, key, selection.topic, selection.page)
+    return True
 
 
 async def select_lesson(callback: CallbackQuery, db: DatabaseManager, locale: Locale) -> None:
-    """Render a valid lesson and record progress in the selected topic."""
+    """Accept older lesson buttons without storing activity from groups."""
     selection = parse_selection(callback.data or "", locale)
     if selection is None:
         await callback.answer(tr(locale, "invalid_page"))
@@ -427,18 +451,127 @@ async def select_lesson(callback: CallbackQuery, db: DatabaseManager, locale: Lo
     if not is_accessible(callback.message):
         await callback.answer(tr(locale, "invalid_message"))
         return
-    page = LessonManager.get_topic_content(selection.topic, selection.page, locale)
-    if page is None or (selection.view == "code" and not _code_sections(page, locale)):
-        await callback.answer(tr(locale, "invalid_page"))
+    shown = await _show_lesson(callback, selection, db, locale)
+    await callback.answer(None if shown else tr(locale, "invalid_page"))
+
+
+async def _settings(
+    callback: CallbackQuery, action: str, values: Sequence[str], db: DatabaseManager, locale: Locale
+) -> bool:
+    sender = telegram_user(callback)
+    if sender is None:
+        return False
+    if action == "level" and len(values) == 1 and (values[0] == "all" or values[0] in LessonLevel):
+        await db.get_or_create_user(sender.id, sender.username)
+        await db.set_level(sender.id, None if values[0] == "all" else LessonLevel(values[0]))
+    elif action == "compact" and len(values) == 1 and values[0] in {"0", "1"}:
+        await db.get_or_create_user(sender.id, sender.username)
+        await db.set_compact(sender.id, values[0] == "1")
+    elif action != "settings" or values:
+        return False
+    prefs = await db.get_preferences(sender.id)
+    text, markup = settings_view(locale, prefs.level, prefs.compact)
+    personal_menu = InlineKeyboardBuilder()
+    personal_menu.button(text=tr(locale, "privacy_cmd"), callback_data="privacy:show")
+    personal_menu.button(text=tr(locale, "questions_cmd"), callback_data="study:questions")
+    personal_menu.adjust(1)
+    markup.inline_keyboard.extend(personal_menu.as_markup().inline_keyboard)
+    await present(callback, text, markup)
+    return True
+
+
+async def _lesson_action(
+    callback: CallbackQuery, action: str, values: Sequence[str], db: DatabaseManager, locale: Locale
+) -> bool:
+    if not values or (location := lesson_location(values[0])) is None:
+        return False
+    key = values[0]
+    selection = LessonSelection(*location, "lesson")
+    if action == "open" and len(values) == 1:
+        return await _show_lesson(callback, selection, db, locale)
+    if action == "quiz" and (
+        len(values) == 1 or (len(values) == 2 and values[1] in {"0", "1", "2", "3"})
+    ):
+        rendered = quiz_view(locale, key, int(values[1]) if len(values) == 2 else None)
+        if rendered is None:
+            return False
+        await present(callback, *rendered)
+        return True
+    sender = telegram_user(callback)
+    if sender is None:
+        return False
+    if action == "complete" and len(values) == 1:
+        await db.get_or_create_user(sender.id, sender.username)
+        await db.complete_lesson(sender.id, key)
+    elif action == "bookmark" and len(values) == 2 and values[1] in {"0", "1"}:
+        await db.get_or_create_user(sender.id, sender.username)
+        await db.set_bookmark(sender.id, key, bookmarked=values[1] == "1")
+    else:
+        return False
+    return await _show_lesson(callback, selection, db, locale, record=False)
+
+
+async def study_action(
+    callback: CallbackQuery, state: FSMContext, db: DatabaseManager, locale: Locale, bot: Bot
+) -> None:
+    """Handle the grouped curriculum and private study tools."""
+    _, action, *values = (callback.data or "").split(":")
+    if action == "progress":
+        await _progress(callback, db, locale, bot)
         return
-    await _present(
-        callback, lesson_text(selection, page, locale), lesson_keyboard(selection, page, locale)
-    )
-    if selection.view == "lesson":
-        user = callback.from_user
-        await db.get_or_create_user(user.id, user.username)
-        await db.update_user_progress(user.id, selection.topic, selection.page)
-    await callback.answer()
+    if not is_accessible(callback.message):
+        await callback.answer(tr(locale, "invalid_message"))
+        return
+    public = action in {"open", "catalog", "contents"}
+    if not public and not await require_private(callback, locale, bot):
+        return
+    shown = True
+    match action:
+        case "settings" | "level" | "compact":
+            shown = await _settings(callback, action, values, db, locale)
+        case "catalog":
+            prefs = await _preferences(callback, db)
+            group = values[0] if len(values) == 1 else None
+            await present(callback, *catalog_view(locale, group, prefs.level))
+        case "contents" if len(values) == 1 and values[0] in LessonTopic:
+            prefs = await _preferences(callback, db)
+            await present(callback, *contents_view(locale, LessonTopic(values[0]), prefs.level))
+        case "search" if not values:
+            await state.clear()
+            await state.set_state(Conversation.search)
+            await present(callback, study_tr(locale, "search_prompt"))
+        case "bookmarks":
+            sender = telegram_user(callback)
+            page = 0
+            if (
+                len(values) == 1
+                and values[0].isascii()
+                and values[0].isdigit()
+                and len(values[0]) <= 3
+            ):
+                page = int(values[0])
+            saved = await db.list_bookmarks(sender.id) if sender else ()
+            await present(callback, *bookmarks_view(locale, saved, page))
+        case "open" | "complete" | "bookmark" | "quiz":
+            shown = await _lesson_action(callback, action, values, db, locale)
+        case _:
+            shown = False
+    await callback.answer(None if shown else tr(locale, "invalid_page"))
+
+
+async def search_lessons(
+    message: Message, state: FSMContext, db: DatabaseManager, locale: Locale, bot: Bot
+) -> None:
+    """Search translated lesson titles in a private conversation."""
+    if not await require_private(message, locale, bot):
+        return
+    query = (message.text or "").strip()
+    if not 2 <= len(query) <= 100:
+        await message.answer(study_tr(locale, "search_invalid"))
+        return
+    prefs = await _preferences(message, db)
+    await state.clear()
+    await present(message, *search_view(locale, query, prefs.level))
 
 
 async def current_page(callback: CallbackQuery) -> None:
@@ -446,9 +579,12 @@ async def current_page(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-async def fallback_text(message: Message, locale: Locale) -> None:
-    """Invite the learner to use the dashboard or help."""
-    await _present(message, tr(locale, "fallback"), dashboard_keyboard(locale))
+async def fallback_text(message: Message, locale: Locale, db: DatabaseManager) -> None:
+    """Offer help in private chats without responding to arbitrary group messages."""
+    if has_private_chat(message):
+        sender = telegram_user(message)
+        resume = await _resume(db, sender.id) if sender else None
+        await present(message, tr(locale, "fallback"), dashboard_view(locale, resume)[1])
 
 
 async def report_failure(event: ErrorEvent) -> bool:
@@ -457,7 +593,8 @@ async def report_failure(event: ErrorEvent) -> bool:
     target = event.update.callback_query or event.update.message
     if target is None:
         return True
-    locale = resolve_locale(target.from_user.language_code if target.from_user else None)
+    sender = telegram_user(target)
+    locale = resolve_locale(sender.language_code if sender else None)
     try:
         await target.answer(tr(locale, "failure"))
     except TelegramAPIError, ProxyError, ProxyConnectionError, ProxyTimeoutError:
@@ -477,13 +614,15 @@ def create_router() -> Router:
     router.message.register(cancel, Command("cancel"))
     router.message.register(run_expression, Command("run"))
     router.message.register(legacy_action, F.text.in_(set(_LEGACY_ACTIONS)))
-    router.message.register(record_question, Conversation.waiting_question)
+    register_personal_routes(router)
+    router.message.register(search_lessons, Conversation.search)
     router.message.register(fallback_text, F.text)
     router.callback_query.register(show_languages, F.data == "languages")
     router.callback_query.register(choose_language, F.data.startswith("lang:"))
     router.callback_query.register(select_lesson, F.data.startswith(("topic:", "page:", "code:")))
     router.callback_query.register(dashboard_action, F.data.startswith("dashboard:"))
     router.callback_query.register(dashboard_action, F.data.in_({"show_topics", "back_to_main"}))
+    router.callback_query.register(study_action, F.data.startswith("study:"))
     router.callback_query.register(current_page, F.data == "current_page")
     router.error.register(
         report_failure,

@@ -4,8 +4,13 @@ from dataclasses import replace
 from typing import Final
 
 from bot.advanced_lessons import ADVANCED_LESSONS
-from bot.lesson_models import Lesson, LessonPage, LessonTopic
+from bot.api_lessons import API_LESSON_PAGES
+from bot.core_lessons import CORE_PAGES
+from bot.django_lessons import DJANGO_LESSONS
+from bot.lesson_models import LESSON_LANGUAGES, Lesson, LessonPage, LessonTopic
 from bot.lesson_translations import TRANSLATIONS, PageTranslation
+from bot.python_lessons import FRAMEWORK_PAGES, PYTHON_LESSONS
+from bot.workflow_lessons import WORKFLOW_PAGES
 
 __all__ = ["LessonManager", "LessonPage", "LessonTopic"]
 
@@ -27,35 +32,22 @@ _LESSONS: Final[dict[LessonTopic, Lesson]] = {
                     "• Кроссплатформенность (работает на Windows, Linux, macOS)\n\n"
                     "<b>Первый запуск Python:</b>"
                 ),
-                windows_code="""# Для Windows:
-1. Скачайте Python с python.org
-2. Установите с галочкой "Add Python to PATH"
-3. Откройте командную строку (cmd)
-4. Введите: python --version
-5. Чтобы запустить интерпретатор: python""",
-                linux_code="""# Для Linux:
-1. Обычно Python уже установлен
-2. Проверьте версию: python3 --version
-3. Если нет Python: sudo apt install python3
-4. Запуск интерпретатора: python3""",
-                example_code="""# Ваша первая программа на Python
-print("Привет, мир!")
+                windows_code="""# Python Install Manager (Windows):
+py -3.14 --version
+py -3.14""",
+                linux_code="""# Linux/macOS:
+python3.14 --version
+python3.14""",
+                example_code="""name = "Ada"
+completed = 2
+total = 5
+topics = ["syntax", "files", "web"]
 
-# Переменные
-name = "Алексей"
-age = 25
-print(f"Меня зовут {name}, мне {age} лет")
+progress = completed / total
+print(f"{name}: {progress:.0%} complete")
+print(f"Next topic: {topics[completed]}")
 
-# Типы данных
-number = 42                 # Целое число
-pi = 3.14159               # Число с плавающей точкой
-text = "Python"            # Строка
-is_true = True             # Булево значение
-numbers = [1, 2, 3, 4, 5]  # Список
-
-# Ввод данных
-user_input = input("Введите ваше имя: ")
-print(f"Привет, {user_input}!")""",
+assert progress == 0.4""",
             ),
             LessonPage(
                 title="Основные конструкции",
@@ -96,39 +88,24 @@ print(greet())""",
             LessonPage(
                 title="Современный синтаксис",
                 explanation="Python постоянно развивается, добавляя новые возможности синтаксиса",
-                example_code="""# F-строки (Python 3.6+)
-name = "Анна"
-age = 30
-height = 1.75
-message = f"{name}, {age} лет, рост {height:.2f} м"
-print(message)  # Анна, 30 лет, рост 1.75 м
-
-# Оператор := (моржовый оператор, Python 3.8+)
-# Позволяет присваивать значения в выражениях
-if (n := len([1, 2, 3])) > 2:
-    print(f"Длина списка: {n}")
-
-# Match-case (Python 3.10+)
-def handle_http_status(code: int) -> str:
-    match code:
-        case 200:
-            return "Успех"
+                example_code="""def status_label(status: int) -> str:
+    match status:
+        case 200 | 201:
+            return "success"
         case 404:
-            return "Не найдено"
-        case 500:
-            return "Ошибка сервера"
+            return "not found"
+        case 500 | 503:
+            return "server error"
         case _:
-            return "Неизвестный статус"
+            return "other"
 
-print(handle_http_status(200))
 
-# Аннотации типов
-def add_numbers(a: int, b: int) -> int:
-    return a + b
-
-# Генераторы списков и словарей
-squares = [x**2 for x in range(10) if x % 2 == 0]
-print(squares)  # [0, 4, 16, 36, 64]""",
+statuses = [200, 201, 404, 503]
+counts = {status: statuses.count(status) for status in set(statuses)}
+if (successful := sum(counts.get(code, 0) for code in (200, 201))) > 0:
+    print(f"Successful responses: {successful}")
+assert status_label(404) == "not found"
+""",
             ),
         ),
     ),
@@ -145,70 +122,33 @@ print(squares)  # [0, 4, 16, 36, 64]""",
                 "3. <b>Полиморфизм</b> - возможность объектов с одинаковым "
                 "интерфейсом иметь разную реализацию\n"
                 "4. <b>Абстракция</b> - работа на уровне понятий, а не деталей",
-                example_code="""# Базовый пример класса
-class Person:
-    '''Класс, представляющий человека'''
+                example_code="""from typing import override
 
-    def __init__(self, name: str, age: int):
-        '''Конструктор класса'''
-        self.name = name  # Публичный атрибут
-        self._age = age   # Защищенный атрибут (соглашение)
-        self.__secret = "секрет"  # Приватный атрибут
 
-    def introduce(self) -> str:
-        '''Метод для представления'''
-        return f"Меня зовут {self.name}, мне {self._age} лет"
+class Device:
+    def __init__(self, name: str) -> None:
+        if not name.strip():
+            raise ValueError("name cannot be blank")
+        self.name = name.strip()
 
-    # Свойства (property)
-    @property
-    def age(self) -> int:
-        '''Getter для возраста'''
-        return self._age
+    def status(self) -> str:
+        return f"{self.name}: ready"
 
-    @age.setter
-    def age(self, value: int):
-        '''Setter для возраста с проверкой'''
-        if value < 0 or value > 150:
-            raise ValueError("Некорректный возраст")
-        self._age = value
 
-# Создание объекта
-person1 = Person("Иван", 25)
-print(person1.introduce())
-person1.age = 30  # Используем setter
-print(f"Новый возраст: {person1.age}")
+class Sensor(Device):
+    @override
+    def status(self) -> str:
+        return f"{self.name}: measuring"
 
-# Наследование
-class Student(Person):
-    '''Класс Студент, наследуется от Person'''
 
-    def __init__(self, name: str, age: int, student_id: str):
-        super().__init__(name, age)  # Вызов конструктора родителя
-        self.student_id = student_id
+def report(devices: list[Device]) -> list[str]:
+    return [device.status() for device in devices]
 
-    def study(self):
-        return f"{self.name} учится"
 
-# Полиморфизм
-class Teacher(Person):
-    def work(self):
-        return "Учит студентов"
-
-class Engineer(Person):
-    def work(self):
-        return "Строит мосты"
-
-def show_work(person):
-    '''Функция работает с любым объектом, у которого есть метод work()'''
-    if hasattr(person, 'work'):
-        return person.work()
-    return "Неизвестная профессия"
-
-teacher = Teacher("Анна", 40)
-engineer = Engineer("Петр", 35)
-
-print(show_work(teacher))   # Учит студентов
-print(show_work(engineer))  # Строит мосты""",
+assert report([Device("gateway"), Sensor("thermometer")]) == [
+    "gateway: ready",
+    "thermometer: measuring",
+]""",
             ),
         ),
     ),
@@ -222,61 +162,26 @@ print(show_work(engineer))  # Строит мосты""",
                 "• Конфигурации приложений\n"
                 "• Обработки больших объемов данных\n"
                 "• Логирования событий",
-                example_code="""# Открытие файла на чтение
-with open('example.txt', 'r', encoding='utf-8') as file:
-    content = file.read()
-    print("Содержимое файла:")
-    print(content)
-
-# Построчное чтение
-with open('example.txt', 'r', encoding='utf-8') as file:
-    for line_num, line in enumerate(file, 1):
-        print(f"Строка {line_num}: {line.strip()}")
-
-# Запись в файл
-with open('output.txt', 'w', encoding='utf-8') as file:
-    file.write("Первая строка\\n")
-    file.write("Вторая строка\\n")
-    print("Файл записан")
-
-# Добавление в существующий файл
-with open('output.txt', 'a', encoding='utf-8') as file:
-    file.write("Добавленная строка\\n")
-
-# Работа с JSON файлами
+                example_code="""import csv
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-data = {
-    "name": "Алексей",
-    "age": 30,
-    "skills": ["Python", "JavaScript", "SQL"]
-}
+records = [{"name": "Ada", "course": "Python"}, {"name": "Grace", "course": "Django"}]
 
-# Запись в JSON
-with open('data.json', 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
+with TemporaryDirectory() as directory:
+    root = Path(directory)
+    json_path = root / "students.json"
+    json_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    assert json.loads(json_path.read_text(encoding="utf-8")) == records
 
-# Чтение из JSON
-with open('data.json', 'r', encoding='utf-8') as f:
-    loaded_data = json.load(f)
-    print(f"Имя: {loaded_data['name']}")
-    print(f"Навыки: {', '.join(loaded_data['skills'])}")
-
-# Работа с CSV файлами
-import csv
-
-# Запись CSV
-with open('users.csv', 'w', newline='', encoding='utf-8') as f:
-    writer = csv.writer(f)
-    writer.writerow(['Имя', 'Возраст', 'Город'])
-    writer.writerow(['Анна', 25, 'Москва'])
-    writer.writerow(['Иван', 30, 'Санкт-Петербург'])
-
-# Чтение CSV
-with open('users.csv', 'r', encoding='utf-8') as f:
-    reader = csv.reader(f)
-    for row in reader:
-        print(row)""",
+    csv_path = root / "students.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["name", "course"])
+        writer.writeheader()
+        writer.writerows(records)
+    with csv_path.open(encoding="utf-8", newline="") as stream:
+        assert list(csv.DictReader(stream)) == records""",
             ),
         ),
     ),
@@ -293,7 +198,7 @@ with open('users.csv', 'r', encoding='utf-8') as f:
 3. Активируйте его:
    venv\\Scripts\\activate
 4. Установите Flask:
-   pip install flask
+   python -m pip install flask
 5. Проверьте установку:
    python -m flask --version""",
                 linux_install="""# Установка Flask на Linux:
@@ -303,7 +208,7 @@ with open('users.csv', 'r', encoding='utf-8') as f:
 3. Активируйте его:
    source venv/bin/activate
 4. Установите Flask:
-   pip install flask
+   python -m pip install flask
 5. Проверьте установку:
    python3 -m flask --version""",
                 example_code="""# Пример простого Flask приложения
@@ -361,12 +266,12 @@ if __name__ == '__main__':
                 windows_install="""# Установка Django на Windows:
 1. python -m venv venv
 2. venv\\Scripts\\activate
-3. pip install django
+3. python -m pip install "Django>=5.2.8,<5.3"
 4. django-admin --version""",
                 linux_install="""# Установка Django на Linux:
 1. python3 -m venv venv
 2. source venv/bin/activate
-3. pip install django
+3. python -m pip install "Django>=5.2.8,<5.3"
 4. django-admin --version""",
                 example_code="""# Создание проекта Django:
 # Windows/Linux: django-admin startproject myproject
@@ -409,39 +314,33 @@ def product_list(request):
                 windows_code="""# Основные команды pip на Windows:
 
 # Установка пакета
-pip install requests
+python -m pip install requests
 
 # Установка пакета с ограничением совместимой версии
-pip install "Django~=5.2.8"
+python -m pip install "Django~=5.2.8"
 
 # Установка из requirements.txt
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # Обновление пакета
-pip install --upgrade package_name
+python -m pip install --upgrade package_name
 
 # Просмотр установленных пакетов
-pip list
+python -m pip list
 
 # Удаление пакета
-pip uninstall package_name
+python -m pip uninstall package_name
 
 # Поиск пакета доступен на https://pypi.org/search/""",
                 linux_code="""# На Linux используйте pip3:
 
-pip3 install requests
-pip3 list
-pip3 uninstall package_name""",
-                example_code="""# Файл requirements.txt содержит зависимости проекта
-# requirements.txt
-Django~=5.2.8
-requests>=2.28.0
-pandas
-numpy
-matplotlib
-
-# Установка всех зависимостей
-pip install -r requirements.txt""",
+python3 -m pip install requests
+python3 -m pip list
+python3 -m pip uninstall package_name""",
+                example_language="text",
+                example_code="""# requirements.txt
+ruff>=0.15,<1
+pytest>=9,<10""",
             ),
             LessonPage(
                 title="Git - система контроля версий",
@@ -454,47 +353,14 @@ pip install -r requirements.txt""",
 sudo apt update
 sudo apt install git
 git --version""",
-                example_code="""# Основные команды Git:
-
-# Инициализация репозитория
-git init
-
-# Проверка статуса
-git status
-
-# Добавление файлов
-git add .              # Все файлы
-git add file.py        # Конкретный файл
-
-# Коммит изменений
-git commit -m "Добавлен новый функционал"
-
-# Просмотр истории
-git log
-git log --oneline
-
-# Работа с ветками
-git branch                    # Список веток
-git branch feature-new        # Создание ветки
-git checkout feature-new      # Переключение на ветку
-git checkout -b feature-new   # Создать и переключиться
-
-# Слияние веток
-git merge feature-new
-
-# Работа с удаленным репозиторием
-git remote add origin https://github.com/user/repo.git
-git push -u origin main      # Первая отправка
-git push                     # Отправка изменений
-git pull                     # Загрузка изменений
-git clone https://github.com/user/repo.git
-
-# .gitignore - файл для исключения файлов
-__pycache__/
-*.pyc
-.env
-venv/
-*.log""",
+                example_language="bash",
+                example_code="""git init
+git status --short
+git switch -c feature/lesson-notes
+git add README.md
+git diff --cached
+git commit -m "Add lesson notes"
+git log -1 --oneline""",
             ),
         ),
     ),
@@ -505,91 +371,37 @@ venv/
                 title="NumPy и Pandas",
                 explanation="Библиотеки для научных вычислений и анализа данных",
                 install_code="""# Установка библиотек для Data Science
-pip install numpy pandas matplotlib seaborn scikit-learn""",
+python -m pip install numpy pandas scikit-learn""",
                 example_code="""import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
-# NumPy - работа с массивами
-arr = np.array([1, 2, 3, 4, 5])
-matrix = np.array([[1, 2, 3], [4, 5, 6]])
+frame = pd.DataFrame(
+    {"city": ["Madrid", "Madrid", "Oslo"], "minutes": [30, 60, 45]}
+)
+mean_by_city = frame.groupby("city")["minutes"].mean()
+assert mean_by_city.loc["Madrid"] == 45
 
-print("Массив:", arr)
-print("Матрица:\\n", matrix)
-print("Среднее:", np.mean(arr))
-print("Сумма:", np.sum(arr))
-
-# Pandas - анализ данных
-data = {
-    'Имя': ['Алексей', 'Мария', 'Иван', 'Ольга'],
-    'Возраст': [25, 30, 22, 28],
-    'Зарплата': [70000, 85000, 60000, 75000],
-    'Город': ['Москва', 'СПб', 'Москва', 'Казань']
-}
-
-df = pd.DataFrame(data)
-print("\\nDataFrame:")
-print(df)
-print("\\nИнформация о данных:")
-print(df.info())
-print("\\nСтатистика:")
-print(df.describe())
-
-# Фильтрация
-print("\\nЛюди старше 25:")
-print(df[df['Возраст'] > 25])
-
-# Группировка
-print("\\nСредняя зарплата по городам:")
-print(df.groupby('Город')['Зарплата'].mean())
-
-# Визуализация
-plt.figure(figsize=(10, 6))
-plt.bar(df['Имя'], df['Зарплата'], color='skyblue')
-plt.title('Зарплаты сотрудников')
-plt.xlabel('Имя')
-plt.ylabel('Зарплата')
-plt.grid(True, alpha=0.3)
-plt.show()""",
+values = frame["minutes"].to_numpy()
+assert np.mean(values) == 45
+print(mean_by_city.to_string())""",
             ),
             LessonPage(
                 title="Машинное обучение",
                 explanation="Базовый пример машинного обучения с scikit-learn",
+                install_code="python -m pip install scikit-learn",
                 example_code="""from sklearn.datasets import load_iris
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.model_selection import train_test_split
 
-# Загрузка данных
-iris = load_iris()
-X = iris.data
-y = iris.target
-
-print(f"Количество образцов: {X.shape[0]}")
-print(f"Количество признаков: {X.shape[1]}")
-print(f"Названия признаков: {iris.feature_names}")
-print(f"Классы: {iris.target_names}")
-
-# Разделение данных
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42
+features, labels = load_iris(return_X_y=True)
+train_x, test_x, train_y, test_y = train_test_split(
+    features, labels, test_size=0.25, stratify=labels, random_state=42
 )
-
-# Обучение модели
 model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-# Предсказания
-y_pred = model.predict(X_test)
-
-# Оценка модели
-accuracy = accuracy_score(y_test, y_pred)
-print(f"\\nТочность модели: {accuracy:.2%}")
-
-# Важность признаков
-importances = model.feature_importances_
-for name, importance in zip(iris.feature_names, importances):
-    print(f"{name}: {importance:.3f}")""",
+model.fit(train_x, train_y)
+score = balanced_accuracy_score(test_y, model.predict(test_x))
+print(f"Balanced accuracy: {score:.2%}")""",
             ),
         ),
     ),
@@ -606,81 +418,23 @@ for name, importance in zip(iris.feature_names, importances):
                     "• Веб-серверы"
                 ),
                 example_code="""import asyncio
-import aiohttp
-import time
 
-# Синхронная функция
-def sync_fetch(url):
-    time.sleep(1)  # Имитация долгой операции
-    return f"Данные с {url}"
 
-# Асинхронная функция
-async def async_fetch(url):
-    await asyncio.sleep(1)  # Асинхронная задержка
-    return f"Данные с {url}"
+async def load_section(name: str, delay: float) -> str:
+    await asyncio.sleep(delay)
+    return name.upper()
 
-# Основной синхронный подход
-def main_sync():
-    start = time.time()
-    results = []
-    for i in range(3):
-        results.append(sync_fetch(f"site-{i}.com"))
-    print(f"Синхронно: {time.time() - start:.2f} сек")
-    return results
 
-# Основной асинхронный подход
-async def main_async():
-    start = time.time()
-    tasks = []
-    for i in range(3):
-        task = asyncio.create_task(async_fetch(f"site-{i}.com"))
-        tasks.append(task)
+async def main() -> None:
+    sections = await asyncio.gather(
+        load_section("syntax", 0.02),
+        load_section("async", 0.01),
+    )
+    assert sections == ["SYNTAX", "ASYNC"]
 
-    results = await asyncio.gather(*tasks)
-    print(f"Асинхронно: {time.time() - start:.2f} сек")
-    return results
 
-# Запуск
 if __name__ == "__main__":
-    # Синхронный запуск
-    print("Синхронный запуск:")
-    main_sync()
-
-    # Асинхронный запуск
-    print("\\nАсинхронный запуск:")
-    asyncio.run(main_async())
-
-# Пример с реальными HTTP запросами
-async def fetch_url(session, url):
-    async with session.get(url) as response:
-        return await response.text()
-
-async def fetch_multiple_urls():
-    urls = [
-        'https://api.github.com',
-        'https://httpbin.org/get',
-        'https://jsonplaceholder.typicode.com/posts/1'
-    ]
-
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch_url(session, url) for url in urls]
-        results = await asyncio.gather(*tasks)
-        return results
-
-# Асинхронный веб-сервер на FastAPI
-# from fastapi import FastAPI
-# import asyncio
-
-# app = FastAPI()
-
-# @app.get("/")
-# async def read_root():
-#     await asyncio.sleep(1)
-#     return {"message": "Hello World"}
-
-# @app.get("/items/{item_id}")
-# async def read_item(item_id: int):
-#     return {"item_id": item_id}""",
+    asyncio.run(main())""",
             ),
         ),
     ),
@@ -689,29 +443,22 @@ async def fetch_multiple_urls():
         pages=(
             LessonPage(
                 title="Windows",
-                explanation="Пошаговая установка Python на Windows",
+                explanation="Установите Python 3.14 с помощью официального Python Install Manager.",
                 steps=(
-                    "1. Скачайте Python с официального сайта: python.org",
-                    "2. Запустите установщик",
-                    "3. ВНИМАНИЕ: Отметьте галочку 'Add Python to PATH'",
-                    "4. Выберите 'Install Now'",
-                    "5. После установки откройте командную строку (cmd)",
-                    "6. Проверьте установку: python --version",
-                    "7. Запустите Python: python",
+                    "Установите Python Install Manager с python.org/downloads/windows.",
+                    "Откройте PowerShell и выполните py install 3.14.",
+                    "Проверьте версию командой py -3.14 --version.",
+                    "Создайте окружение проекта командой py -3.14 -m venv .venv.",
                 ),
             ),
             LessonPage(
-                title="Linux",
-                explanation="Установка Python на Linux",
+                title="Linux и macOS",
+                explanation="Установите Python 3.14 рядом с системным интерпретатором.",
                 steps=(
-                    "1. Откройте терминал",
-                    "2. Проверьте установлен ли Python: python3 --version",
-                    "3. Если Python не установлен:",
-                    "   Ubuntu/Debian: sudo apt update && sudo apt install python3 python3-pip",
-                    "   Fedora: sudo dnf install python3",
-                    "   Arch: sudo pacman -S python",
-                    "4. Установите pip: sudo apt install python3-pip",
-                    "5. Проверьте: python3 --version && pip3 --version",
+                    "Возьмите Python 3.14 из доверенного источника или uv python install 3.14.",
+                    "Проверьте интерпретатор командой python3.14 --version.",
+                    "Создайте окружение командой python3.14 -m venv .venv.",
+                    "Выполните .venv/bin/python -m pip --version для проверки pip.",
                 ),
             ),
         ),
@@ -750,10 +497,28 @@ _LOCALIZED: Final[dict[str, dict[LessonTopic, Lesson]]] = {
 }
 
 
+_ADDITIONS = (
+    CORE_PAGES | API_LESSON_PAGES | WORKFLOW_PAGES | {LessonTopic.FRAMEWORKS: FRAMEWORK_PAGES}
+)
+_NEW_LESSONS = PYTHON_LESSONS | {LessonTopic.DJANGO: DJANGO_LESSONS}
+
+
+def _build_catalogue(language: str) -> dict[LessonTopic, Lesson]:
+    catalogue = (_LESSONS if language == "ru" else _LOCALIZED[language]) | {
+        topic: localized[language] for topic, localized in ADVANCED_LESSONS.items()
+    }
+    for topic, additions in _ADDITIONS.items():
+        lesson = catalogue[topic]
+        # Keep existing page indices valid for stored progress and Telegram buttons.
+        catalogue[topic] = Lesson(lesson.title, lesson.pages + additions[language])
+    return catalogue | {topic: localized[language] for topic, localized in _NEW_LESSONS.items()}
+
+
+_CATALOGUE = {language: _build_catalogue(language) for language in LESSON_LANGUAGES}
+
+
 def _get_lesson(topic: LessonTopic, language: str) -> Lesson | None:
-    if localized := ADVANCED_LESSONS.get(topic):
-        return localized.get(language, localized["ru"])
-    return _LOCALIZED.get(language, _LESSONS).get(topic) or _LESSONS.get(topic)
+    return _CATALOGUE.get(language, _CATALOGUE["ru"]).get(topic)
 
 
 class LessonManager:

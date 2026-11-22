@@ -4,19 +4,29 @@
 
 ## What the bot does
 
-Open a private chat with the bot and send `/start`. **DASHBOARD** is an inline Telegram menu with shortcuts to the curriculum, code examples, Python installation, questions, progress, and language settings. Your Telegram account identifies your profile automatically.
+Open a private chat with the bot and send `/start`. The Telegram **Dashboard** gives you access to the curriculum, code examples, Python installation, questions, progress, and settings.
 
-Open the language picker from DASHBOARD or use `/language`. Select English, Russian, or Spanish. Your selection is saved per Telegram account and survives a restart. Until you choose a language, the bot uses your Telegram language if supported and falls back to Russian otherwise. Progress is shared across languages.
+Open the language picker from the Dashboard or use `/language`. Your choice of English, Russian, or Spanish is saved per Telegram account and survives a restart. Until you choose, the bot uses your supported Telegram language, with Russian as the fallback. Progress is shared across languages.
 
 | Command | Action |
 | --- | --- |
-| `/start` | Open DASHBOARD. |
+| `/start` | Open the Dashboard. |
 | `/help` | Show commands and usage. |
 | `/language` | Choose the bot language. |
 | `/cancel` | Exit the current question dialogue. |
+| `/questions` | View your submitted questions and replies in a private chat. |
+| `/privacy` | Review stored data and request deletion in a private chat. |
 | `/run (2 + 3) ** 2` | Evaluate the expression and return `25`. |
 
-The bot saves questions for review and confirms receipt. The expression evaluator supports finite integers and real numbers with `+ - * / // % **`. It limits input length, tree size, nesting, exponents, and numeric magnitude. Its grammar excludes names, calls, attributes, imports, and statements.
+The expression evaluator supports integers and finite real numbers with `+ - * / // % **`. It limits input length, tree size, nesting, exponents, and numeric magnitude. Its grammar excludes names, calls, attributes, imports, and statements.
+
+### Privacy and questions
+
+Group chats can browse the lesson catalog. Use a private chat for your profile, saved progress, settings, questions, and account deletion. The bot links your profile to your Telegram user ID and saves your username, chosen language, learning activity, and submitted questions.
+
+Submit up to five open questions at a time. Keep tokens and personal information out of your questions. Open questions include new questions and those under review. Authorized mentors can mark a question as under review and save an answer in the private mentor panel. Open `/questions` to read a reply or remove a question after confirming. At startup and every hour while running, the bot purges questions older than 90 days, including answered questions.
+
+To delete your profile, progress, bookmarks, completion records, and questions from the bot's database, use `/privacy` in a private chat and confirm the deletion. Manage Telegram chat history separately in Telegram. Operators manage expiry of older backups separately.
 
 ## Install and run
 
@@ -26,7 +36,7 @@ Run these commands from the repository root on Linux or macOS.
 
 ```bash
 python3.14 -m venv python-mentor-bot/.venv
-python-mentor-bot/.venv/bin/python -m pip install -r python-mentor-bot/requirements.txt
+python-mentor-bot/.venv/bin/python -m pip install --require-hashes -r python-mentor-bot/requirements.lock
 python-mentor-bot/.venv/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)'
 ```
 
@@ -34,7 +44,7 @@ On Windows with PowerShell, run these commands from the repository root.
 
 ```powershell
 py -3.14 -m venv .\python-mentor-bot\.venv
-.\python-mentor-bot\.venv\Scripts\python.exe -m pip install -r .\python-mentor-bot\requirements.txt
+.\python-mentor-bot\.venv\Scripts\python.exe -m pip install --require-hashes -r .\python-mentor-bot\requirements.lock
 .\python-mentor-bot\.venv\Scripts\python.exe -c "import sqlite3; print(sqlite3.sqlite_version)"
 ```
 
@@ -68,30 +78,46 @@ Process environment values take precedence over settings in `.env`. Relative pat
 | --- | --- |
 | `BOT_TOKEN` | Required BotFather token. Malformed tokens are rejected at startup. |
 | `DATABASE_PATH` | Path to the writable SQLite database. Default is `data/python_mentor.db`. |
+| `BOT_OWNER_IDS` | Optional comma-separated Telegram user IDs of owners. |
+| `BOT_MENTOR_IDS` | Optional comma-separated Telegram user IDs of mentors. |
+| `BOT_EDITOR_IDS` | Optional comma-separated Telegram user IDs of editors. |
 | `LOG_LEVEL` | Application log level. Default is `INFO`. |
 | `DEBUG` | Enables debug logging when `LOG_LEVEL` is unset. |
 | `HTTPS_PROXY` | Process environment variable for the proxy to the Telegram API, when required. |
 
 The bot needs outbound HTTPS access to `api.telegram.org`. For a restricted cloud environment, allow that hostname and set the token through the environment’s secret settings. A proxy connection error points to the network path or the proxy configuration. An authentication error returned by Telegram points to the bot token. [Telegram Bot API](https://core.telegram.org/bots/api)
 
+### Staff access
+
+Use numeric Telegram user IDs for role assignments. An empty list grants that role to nobody. Set only the roles each account needs and restart the polling process after changing the configuration.
+
+Owners and mentors can use `/mentor` in a private chat to review learner questions. Owners and editors can use `/editor` in a private chat for curriculum contribution instructions. Submit curriculum changes in Git for review and CI before deployment. Keep published lesson identifiers stable, update all three translations, and run each changed example with its documented interpreter and dependencies.
+
 ## Curriculum
 
-The curriculum includes Python basics, modern syntax, object-oriented programming, files, developer tools, data science, and asynchronous I/O. Open a chapter from DASHBOARD to read pages or open its code examples.
+The catalog has 81 lesson pages across 16 topics. Choose a chapter in the Dashboard, follow a learning path, filter by level, or search lesson and chapter titles in a private chat. Each page identifies its level as Beginner, Intermediate, or Professional. Titles, explanations, and instructions follow your selected language. Code samples are shared across languages.
+
+Use the Dashboard to resume the last lesson you opened. In compact mode, the explanation opens first and code examples open separately. Change the mode in settings. Bookmark pages to return to them later. Mark lessons complete and use the short quizzes on selected topics to check your understanding.
 
 | Chapter | Focus |
 | --- | --- |
-| Django | Project and application structure, models, migrations, and the request/response flow. [Django documentation](https://docs.djangoproject.com/) |
-| FastAPI | Typed API endpoints, request validation, and generated OpenAPI documentation. [FastAPI documentation](https://fastapi.tiangolo.com/) |
-| Django REST Framework | Serializers and REST endpoints backed by Django models. [Django REST Framework documentation](https://www.django-rest-framework.org/) |
-| Pydantic | Data models, field constraints, validation, and serialization. [Pydantic documentation](https://docs.pydantic.dev/latest/) |
+| Python 3.14 | Interpreter checks, template strings, deferred annotations, Zstandard, and interpreter pools. [What's New in Python 3.14](https://docs.python.org/3.14/whatsnew/3.14.html) |
+| What's new in Python 3.15 | UTF-8 by default, comprehension unpacking, frozendict, sentinel values, explicit lazy imports, and the profiling package. [What's New in Python 3.15](https://docs.python.org/3.15/whatsnew/3.15.html) |
+| Django | Build a project on 5.2 LTS, work with models, forms, permissions, transactions, ORM optimization and ASGI, then try features from 6.0 and 6.1. The upgrade lesson starts from legacy projects on Django 4.1–5.1. [Django release notes](https://docs.djangoproject.com/en/6.1/releases/) |
+| FastAPI | Validate typed requests, compose dependencies, manage resources with lifespan, and test authorization, transactions, and outbound HTTP. [FastAPI documentation](https://fastapi.tiangolo.com/) |
+| Django REST Framework | Build serializers and viewsets, apply permissions and scoped queries, paginate results, and test authentication, CSRF, and concurrency-sensitive updates. [DRF documentation](https://www.django-rest-framework.org/) |
+| Pydantic v2 | Validate fields and batches, model discriminated unions, and serialize public responses. [Pydantic documentation](https://docs.pydantic.dev/latest/) |
+| Python practice | Functions, typing, OOP, file I/O, developer tools, data analysis, async tasks and timeouts, and automated testing with unittest and pytest. |
 
-Lesson snippets are examples to run in separate learning projects. Follow their chapter-specific dependency instructions in a separate virtual environment. Django, Django REST Framework, FastAPI, and Uvicorn are optional learning dependencies. Pydantic v2 is a bot dependency as well as a course subject.
+The walkthroughs target Python 3.14 and run examples specific to 3.15 with that interpreter. Python 3.15 became stable on October 9, 2026. Django 5.2 LTS supports Python up to 3.14. For Django examples on Python 3.15, use Django 6.1.3 or a later 6.1 patch. Django 4.1 is covered as a starting point for migration. [Python 3.15 schedule](https://peps.python.org/pep-0790/) · [Django compatibility](https://docs.djangoproject.com/en/6.1/faq/install/#what-python-version-can-i-use-with-django)
+
+Run lesson examples in their own learning projects and install the chapter's dependencies in a separate virtual environment. Django, DRF, FastAPI, and the data science libraries are learning dependencies. Pydantic v2 is also used by the bot.
 
 ## Architecture and storage
 
 Python Mentor Bot runs as a single async process with aiogram long polling. `main.py` owns startup, HTTP session, and database lifecycles. `bot/handlers.py` routes commands and callback queries. `bot/i18n.py` resolves and renders the user's interface language. The lesson catalog supplies pages to the handlers. Pydantic v2 validates configuration and persisted records. `bot/storage.py` reuses an aiosqlite connection and binds values in SQL statements.
 
-SQLite retains registration, selected language, current chapter and page, and submitted questions. Temporary conversation state, such as waiting for a question, lives in memory and expires. A restart clears that temporary state.
+SQLite retains learner profiles, preferences, progress, bookmarks, completion, and submitted questions. Temporary conversation state, such as waiting for a question, lives in memory and expires. A restart clears that temporary state.
 
 The bot creates its schema on startup. For an older `python_mentor.db` or `bot_data.db`, stop all writers and make a SQLite backup. Point `DATABASE_PATH` to a writable copy of that backup. Schema initialization adds the needed progress or language columns to compatible older databases and preserves existing rows. Questions submitted after migration go into `user_questions`.
 
@@ -101,14 +127,16 @@ You can initialize a database copy without a Telegram token. Substitute the abso
 (cd python-mentor-bot && .venv/bin/python create_db.py /absolute/path/to/working.db)
 ```
 
-Initialization is repeatable. Keep backups and database files private because they contain Telegram identifiers, usernames, and submitted questions. [SQLite backup documentation](https://sqlite.org/backup.html)
+Initialization is repeatable. Keep `DATABASE_PATH` and backups outside the repository and in a directory accessible only to the service account and authorized operators. Use a service-owned directory with no shared write access and a regular database file. On POSIX systems, use `0700` for the directory and `0600` for database files and backups. On Windows, restrict access with ACLs. Apply the same policy to SQLite sidecar files. Test restoration on a private copy and expire backups according to your retention policy. [SQLite backup documentation](https://sqlite.org/backup.html)
+
+The historical SQLite file was removed from the current checkout after a restricted local archive was verified. Its earlier Git commits retain the file. The repository history was preserved. Keep repository and backup access restricted until the data owner has reviewed the earlier copies.
 
 ## Development checks
 
 Run from the repository root in Bash.
 
 ```bash
-python-mentor-bot/.venv/bin/python -m pip install -r python-mentor-bot/requirements-dev.txt
+python-mentor-bot/.venv/bin/python -m pip install --require-hashes -r python-mentor-bot/requirements-dev.lock
 (cd python-mentor-bot && .venv/bin/ruff check .)
 (cd python-mentor-bot && .venv/bin/ruff format --check .)
 (cd python-mentor-bot && .venv/bin/python -B -m pytest -p no:cacheprovider)
@@ -116,6 +144,15 @@ python-mentor-bot/.venv/bin/python -m pip install -r python-mentor-bot/requireme
 
 On PowerShell, enter the application directory, use `.\.venv\Scripts\python.exe` and `.\.venv\Scripts\ruff.exe`, and keep the same Ruff and pytest arguments.
 
-Automated tests use simulated Telegram updates and temporary databases. For a live smoke check with a test bot, open DASHBOARD, switch to each language, and open a framework lesson. Record progress on a lesson page, send a question, and evaluate `/run 2 ** 3`. Restart the bot and verify the language and progress persist. Use a second account to verify those preferences are independent.
+When changing dependencies, regenerate both locks with uv from the application directory.
+
+```bash
+uv pip compile --universal --python-version 3.14 --generate-hashes --no-annotate --output-file requirements.lock requirements.txt
+uv pip compile --universal --python-version 3.14 --generate-hashes --no-annotate --constraint requirements.lock --output-file requirements-dev.lock requirements-dev.txt
+```
+
+CI runs Ruff and pytest on Python 3.14 and 3.15, audits runtime dependencies with pip-audit, scans Git history with redacted Gitleaks output, and rejects tracked deployment databases and dotenv files except the example template. The hash-checked lock files pin runtime and development dependencies. Review and test lock-file updates alongside changes to the dependency manifests.
+
+Automated tests use simulated Telegram updates and temporary databases. For a live smoke check, use a dedicated test bot and open the Dashboard from a private chat. Switch languages, browse a learning path, try compact mode, bookmark and complete a lesson, and answer a short quiz. Restart the bot and check saved progress from two accounts. Submit a question and check access with an authorized mentor and an ordinary account. Verify that a group permits catalog browsing and sends personal actions to a private chat. Confirm deletion with `/privacy` on a test profile.
 
 For changes to handlers or storage, cover stale callbacks, unavailable messages, empty questions, and overlapping updates from one account. For changes to validation, cover absent tokens, redacted errors, invalid expressions, and numeric limits. For changes to lessons or translations, verify chapter navigation, code escaping, and Telegram message length.
