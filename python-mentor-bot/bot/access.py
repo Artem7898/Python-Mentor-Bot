@@ -40,6 +40,20 @@ class Roles:
 type ChatEvent = Message | CallbackQuery
 
 
+def is_billing_update(event: TelegramObject) -> bool:
+    """Identify payment updates which need separate, unthrottled processing."""
+    return isinstance(event, Update) and (
+        event.pre_checkout_query is not None
+        or (
+            event.message is not None
+            and (
+                event.message.successful_payment is not None
+                or event.message.refunded_payment is not None
+            )
+        )
+    )
+
+
 def telegram_user(event: ChatEvent) -> User | None:
     """Return a real Telegram user, excluding posts made as a group or channel."""
     if isinstance(event, Message) and event.sender_chat is not None:
@@ -107,6 +121,8 @@ class UserRateLimit(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
+        if is_billing_update(event):
+            return await handler(event, data)
         if isinstance(event, Update) and (entry := event.message or event.callback_query):
             sender = telegram_user(entry)
             message = entry if isinstance(entry, Message) else entry.message

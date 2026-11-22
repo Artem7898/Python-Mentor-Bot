@@ -43,6 +43,7 @@ async def initialize_schema(db: aiosqlite.Connection) -> None:
                 PRIMARY KEY (user_id, lesson_id)
             )
             """)
+        await _initialize_billing(db)
         await db.commit()
     except BaseException:
         await db.rollback()
@@ -100,5 +101,51 @@ async def _migrate_questions(db: aiosqlite.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS open_questions_by_id ON user_questions(id) "
         "WHERE status IN ('new', 'in_review')",
         "CREATE INDEX IF NOT EXISTS questions_by_creation ON user_questions(unixepoch(created_at))",
+    ):
+        await db.execute_fetchall(index)
+
+
+async def _initialize_billing(db: aiosqlite.Connection) -> None:
+    # Billing receipts are independent of a learner profile so refunds still work after deletion.
+    await db.execute_fetchall("""
+        CREATE TABLE IF NOT EXISTS billing_invoices (
+            payload TEXT PRIMARY KEY NOT NULL,
+            product TEXT NOT NULL,
+            user_id INTEGER NOT NULL CHECK (user_id > 0),
+            stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 10000),
+            created_at INTEGER NOT NULL,
+            checkout_id TEXT UNIQUE,
+            checkout_at INTEGER,
+            renewal_enabled INTEGER NOT NULL DEFAULT 1 CHECK (renewal_enabled IN (0, 1)),
+            CHECK ((checkout_id IS NULL) = (checkout_at IS NULL))
+        )
+        """)
+    await db.execute_fetchall("""
+        CREATE TABLE IF NOT EXISTS billing_charges (
+            charge_id TEXT PRIMARY KEY NOT NULL,
+            payload TEXT NOT NULL REFERENCES billing_invoices(payload),
+            expires_at INTEGER CHECK (expires_at > 0),
+            first_recurring INTEGER CHECK (first_recurring IN (0, 1)),
+            refunded_at INTEGER,
+            CHECK ((expires_at IS NULL) = (first_recurring IS NULL)),
+            CHECK (expires_at IS NOT NULL OR refunded_at IS NOT NULL)
+        )
+        """)
+    await db.execute_fetchall("""
+        CREATE TABLE IF NOT EXISTS billing_trials (
+            user_id INTEGER PRIMARY KEY CHECK (user_id > 0),
+            activated_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL CHECK (expires_at > activated_at)
+        )
+        """)
+    for index in (
+        "CREATE INDEX IF NOT EXISTS billing_invoices_by_user "
+        "ON billing_invoices(user_id, product, checkout_at)",
+        "CREATE INDEX IF NOT EXISTS billing_unused_invoices "
+        "ON billing_invoices(created_at) WHERE checkout_id IS NULL",
+        "CREATE INDEX IF NOT EXISTS billing_payments_by_invoice "
+        "ON billing_charges(payload, expires_at)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS billing_initial_payment "
+        "ON billing_charges(payload) WHERE first_recurring = 1",
     ):
         await db.execute_fetchall(index)

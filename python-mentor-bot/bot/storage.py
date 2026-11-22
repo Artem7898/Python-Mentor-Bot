@@ -160,7 +160,8 @@ class DatabaseManager:
             raise StorageError("SQLite operation failed.") from exc
 
     @asynccontextmanager
-    async def _using_connection(self) -> AsyncGenerator[aiosqlite.Connection]:
+    async def connection(self) -> AsyncGenerator[aiosqlite.Connection]:
+        """Lend one serialized connection for a short, autocommit operation."""
         try:
             async with self._operation_lock:
                 if self._connection is None:
@@ -172,8 +173,9 @@ class DatabaseManager:
             raise StorageError("SQLite operation failed.") from exc
 
     @asynccontextmanager
-    async def _transaction(self) -> AsyncGenerator[aiosqlite.Connection]:
-        async with self._using_connection() as db:
+    async def transaction(self) -> AsyncGenerator[aiosqlite.Connection]:
+        """Lend one connection for an atomic write sequence."""
+        async with self.connection() as db:
             try:
                 await db.execute_fetchall("BEGIN IMMEDIATE")
                 yield db
@@ -196,7 +198,7 @@ class DatabaseManager:
     async def _read_all[Model: BaseModel](
         self, model: type[Model], sql: str, parameters: Parameters
     ) -> tuple[Model, ...]:
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(sql, parameters)
         try:
             return tuple(model.model_validate(dict(row)) for row in rows)
@@ -235,7 +237,7 @@ class DatabaseManager:
 
     async def update_user_progress(self, user_id: int, topic: LessonTopic, page: int = 0) -> bool:
         """Update lesson coordinates without overwriting profile or registration data."""
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 "UPDATE users SET current_topic = ?, current_page = ? WHERE user_id = ? "
                 "RETURNING user_id",
@@ -255,7 +257,7 @@ class DatabaseManager:
     async def set_language(self, user_id: int, language: str) -> None:
         """Persist a supported locale for an already registered learner."""
         parameters = (_LANGUAGE.validate_python(language), _USER_ID.validate_python(user_id))
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 "UPDATE users SET language = ? WHERE user_id = ? RETURNING user_id", parameters
             )
@@ -283,7 +285,7 @@ class DatabaseManager:
     async def _set_preference(
         self, user_id: int, column: Literal["lesson_level", "compact"], value: str | int | None
     ) -> None:
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 f"UPDATE users SET {column} = ? WHERE user_id = ? RETURNING user_id",
                 (value, _USER_ID.validate_python(user_id)),
@@ -301,7 +303,7 @@ class DatabaseManager:
             _PAGE.validate_python(page),
             _USER_ID.validate_python(user_id),
         )
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 "UPDATE users SET last_lesson_id = ?, current_topic = ?, current_page = ? "
                 "WHERE user_id = ? RETURNING user_id",
@@ -311,7 +313,7 @@ class DatabaseManager:
 
     async def get_last_lesson(self, user_id: int) -> str | None:
         """Return the last recorded stable lesson ID if one has been saved."""
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 "SELECT last_lesson_id FROM users WHERE user_id = ?",
                 (_USER_ID.validate_python(user_id),),
@@ -327,7 +329,7 @@ class DatabaseManager:
         """Set the selected bookmark state and return whether it changed."""
         if bookmarked:
             return await self._save_lesson_record("lesson_bookmarks", user_id, lesson_id)
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             return bool(
                 await _delete_rows(
                     db,
@@ -344,7 +346,7 @@ class DatabaseManager:
             _LESSON_ID.validate_python(lesson_id),
             datetime.now(UTC).isoformat(),
         )
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 f"INSERT INTO {table} (user_id, lesson_id, recorded_at) VALUES (?, ?, ?) "
                 "ON CONFLICT (user_id, lesson_id) DO NOTHING RETURNING lesson_id",
@@ -361,7 +363,7 @@ class DatabaseManager:
         return await self._list_lesson_records("lesson_bookmarks", user_id)
 
     async def _list_lesson_records(self, table: LessonRecordTable, user_id: int) -> tuple[str, ...]:
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             rows = await db.execute_fetchall(
                 f"SELECT lesson_id FROM {table} WHERE user_id = ? "
                 "ORDER BY recorded_at DESC, lesson_id",
@@ -371,7 +373,7 @@ class DatabaseManager:
 
     async def save_user(self, user: UserProgress) -> None:
         """Save a complete student record while retaining its related questions."""
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             await db.execute_fetchall(
                 f"""
                 INSERT INTO users ({_USER_COLUMNS}) VALUES (?, ?, ?, ?, ?)
@@ -403,7 +405,7 @@ class DatabaseManager:
             now,
             now,
         )
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             await db.execute_fetchall(
                 "INSERT INTO user_questions (user_id, question, answer, status, created_at, "
                 "updated_at) VALUES (?, ?, ?, 'answered', ?, ?)",
@@ -517,7 +519,7 @@ class DatabaseManager:
 
     async def delete_question(self, user_id: int, question_id: int) -> bool:
         """Delete a question only when it belongs to the authenticated learner."""
-        async with self._using_connection() as db:
+        async with self.connection() as db:
             return bool(
                 await _delete_rows(
                     db,
@@ -529,7 +531,7 @@ class DatabaseManager:
     async def delete_user_data(self, user_id: int) -> bool:
         """Atomically delete the specified learner's current and known legacy records."""
         parameters = (_USER_ID.validate_python(user_id),)
-        async with self._transaction() as db:
+        async with self.transaction() as db:
             deleted = await _delete_rows(
                 db, "DELETE FROM user_questions WHERE user_id = ?", parameters
             )
@@ -550,7 +552,7 @@ class DatabaseManager:
         """Delete questions older than the given age, including known legacy records."""
         days = _RETENTION_DAYS.validate_python(retention_days)
         cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
-        async with self._transaction() as db:
+        async with self.transaction() as db:
             deleted = await _delete_rows(
                 db, "DELETE FROM user_questions WHERE unixepoch(created_at) < ?", (cutoff,)
             )

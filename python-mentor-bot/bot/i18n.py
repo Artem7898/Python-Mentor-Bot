@@ -102,6 +102,11 @@ _COPY = {
     "language_cmd": ("Выбрать язык", "Choose a language", "Elegir idioma"),
     "privacy_cmd": ("Мои данные", "My data", "Mis datos"),
     "questions_cmd": ("Мои вопросы", "My questions", "Mis preguntas"),
+    "ask_cmd": ("Задать вопрос по Python", "Ask a Python question", "Preguntar sobre Python"),
+    "pro_cmd": ("Тариф Pro", "Pro plan", "Plan Pro"),
+    "review_cmd": ("Разбор кода в Pro", "Pro code review", "Revisión de código Pro"),
+    "interview_cmd": ("Тренажёр собеседований Pro", "Pro interview trainer", "Entrevistas Pro"),
+    "paysupport_cmd": ("Помощь с оплатой", "Payment support", "Ayuda con pagos"),
     "mentor_cmd": ("Очередь наставника", "Mentor queue", "Cola del mentor"),
     "editor_cmd": ("Редактура курса", "Course editing", "Edición del curso"),
     "cancel_cmd": (
@@ -145,6 +150,11 @@ COMMANDS = (
     ("language", "language_cmd"),
     ("privacy", "privacy_cmd"),
     ("questions", "questions_cmd"),
+    ("ask", "ask_cmd"),
+    ("pro", "pro_cmd"),
+    ("review", "review_cmd"),
+    ("interview", "interview_cmd"),
+    ("paysupport", "paysupport_cmd"),
     ("cancel", "cancel_cmd"),
     ("run", "run_cmd"),
 )

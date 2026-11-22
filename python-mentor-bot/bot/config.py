@@ -6,17 +6,30 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 type LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 type TelegramId = Annotated[int, Field(gt=0, le=2**63 - 1)]
 
 DEFAULT_DATABASE_PATH = Path("data/python_mentor.db")
+PRO_PRICE_STARS: Final = 299
 
 _TOKEN_PATTERN = re.compile(r"[1-9][0-9]{0,19}:[A-Za-z0-9_-]+")
+_MODEL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
+_TRUE_VALUES = frozenset({"1", "true", "on", "yes"})
+_FALSE_VALUES = frozenset({"0", "false", "off", "no"})
 _SETTINGS_KEYS = (
     "BOT_TOKEN",
     "DATABASE_PATH",
@@ -25,6 +38,12 @@ _SETTINGS_KEYS = (
     "BOT_OWNER_IDS",
     "BOT_MENTOR_IDS",
     "BOT_EDITOR_IDS",
+    "BILLING_ENABLED",
+    "PRO_PRICE_STARS",
+    "BILLING_SUPPORT_URL",
+    "BILLING_TERMS_URL",
+    "MENTOR_OPENAI_API_KEY",
+    "MENTOR_OPENAI_MODEL",
 )
 
 
@@ -57,6 +76,20 @@ class Config(BaseModel):
     )
     editor_ids: Annotated[frozenset[TelegramId], Field(validation_alias="BOT_EDITOR_IDS")] = (
         frozenset()
+    )
+    billing_enabled: Annotated[bool, Field(validation_alias="BILLING_ENABLED")] = False
+    pro_price_stars: Annotated[Literal[299], Field(validation_alias="PRO_PRICE_STARS")] = (
+        PRO_PRICE_STARS
+    )
+    billing_support_url: Annotated[
+        HttpUrl | None, Field(validation_alias="BILLING_SUPPORT_URL")
+    ] = None
+    billing_terms_url: Annotated[HttpUrl | None, Field(validation_alias="BILLING_TERMS_URL")] = None
+    mentor_openai_api_key: Annotated[
+        SecretStr | None, Field(validation_alias="MENTOR_OPENAI_API_KEY", repr=False)
+    ] = None
+    mentor_openai_model: Annotated[str, Field(validation_alias="MENTOR_OPENAI_MODEL")] = (
+        "gpt-4.1-mini"
     )
 
     @field_validator("bot_token")
@@ -102,6 +135,65 @@ class Config(BaseModel):
             raise ValueError("expected a comma-separated list of decimal Telegram user IDs")
         return frozenset(map(int, identifiers))
 
+    @field_validator("billing_enabled", mode="before")
+    @classmethod
+    def parse_billing_enabled(cls, value: object) -> object:
+        """Parse an explicit environment opt-in for new purchases."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in _TRUE_VALUES:
+                return True
+            if normalized in _FALSE_VALUES:
+                return False
+        return value
+
+    @field_validator("pro_price_stars", mode="before")
+    @classmethod
+    def parse_star_price(cls, value: object) -> object:
+        """Accept the project price when supplied via the legacy environment variable."""
+        if isinstance(value, str):
+            value = value.strip()
+            if len(value) <= 5 and value.isascii() and value.isdecimal():
+                return int(value)
+        return value
+
+    @field_validator("billing_support_url", "billing_terms_url")
+    @classmethod
+    def validate_billing_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        """Permit HTTPS support and terms links without embedded credentials."""
+        if value is not None and (
+            value.scheme != "https" or value.username is not None or value.password is not None
+        ):
+            raise ValueError("expected an HTTPS URL without embedded credentials")
+        return value
+
+    @field_validator("mentor_openai_api_key")
+    @classmethod
+    def validate_mentor_api_key(cls, value: SecretStr | None) -> SecretStr | None:
+        """Reject unusable key values without including them in diagnostics."""
+        if value is not None:
+            key = value.get_secret_value()
+            if not key or any(char.isspace() for char in key):
+                raise ValueError("expected a nonempty API key without whitespace")
+        return value
+
+    @field_validator("mentor_openai_model")
+    @classmethod
+    def validate_mentor_model(cls, value: str) -> str:
+        """Require a single model identifier."""
+        if not _MODEL_PATTERN.fullmatch(value):
+            raise ValueError("expected a valid model identifier")
+        return value
+
+    @model_validator(mode="after")
+    def validate_billing_support(self) -> Self:
+        """Ensure buyers have a reachable support route before selling."""
+        if self.billing_enabled and not (
+            self.billing_support_url or self.owner_ids or self.mentor_ids
+        ):
+            raise ValueError("BILLING_ENABLED requires BILLING_SUPPORT_URL or a support operator")
+        return self
+
     @classmethod
     def load(
         cls,
@@ -137,9 +229,9 @@ class Config(BaseModel):
         debug = values.pop("DEBUG", None)
         if debug is not None:
             normalized = debug.strip().lower()
-            if normalized in {"1", "true", "on", "yes"}:
+            if normalized in _TRUE_VALUES:
                 values.setdefault("LOG_LEVEL", "DEBUG")
-            elif normalized not in {"0", "false", "off", "no"}:
+            elif normalized not in _FALSE_VALUES:
                 raise ConfigError("DEBUG must be a boolean")
 
         try:
